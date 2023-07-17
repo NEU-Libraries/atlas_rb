@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "atlas/rb"
+require "atlas_rb"
 
 RSpec.configure do |config|
   # Enable flags like --only-failures and --next-failure
