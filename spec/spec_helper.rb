@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "atlas_rb"
+require "faraday"
 
 RSpec.configure do |config|
   # Enable flags like --only-failures and --next-failure
