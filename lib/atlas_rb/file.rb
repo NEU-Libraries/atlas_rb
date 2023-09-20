@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module AtlasRb
-  class Resource
-    include AtlasRb::FaradayHelper
+  class File < Resource
+    ROUTE = "/files/"
   end
 end

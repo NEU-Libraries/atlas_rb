@@ -3,6 +3,7 @@ PATH
   specs:
     atlas_rb (0.1.0)
       faraday (~> 2.7)
+      faraday-multipart (~> 1)
 
 GEM
   remote: https://rubygems.org/
@@ -12,9 +13,12 @@ GEM
     faraday (2.7.10)
       faraday-net_http (>= 2.0, < 3.1)
       ruby2_keywords (>= 0.0.4)
+    faraday-multipart (1.0.4)
+      multipart-post (~> 2)
     faraday-net_http (3.0.2)
     json (2.6.3)
     language_server-protocol (3.17.0.3)
+    multipart-post (2.3.0)
     parallel (1.23.0)
     parser (3.2.2.3)
       ast (~> 2.4.1)
