@@ -8,8 +8,8 @@ module AtlasRb
       connection({}).get(ROUTE + id)&.body
     end
 
-    def self.create
-      connection({}).post(ROUTE)&.body
+    def self.create(id = nil)
+      connection({ parent_id: id }).post(ROUTE)&.body
     end
 
     def self.destroy(id)

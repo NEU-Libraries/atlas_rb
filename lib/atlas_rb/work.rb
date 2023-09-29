@@ -8,8 +8,9 @@ module AtlasRb
       connection({}).get(ROUTE + id)&.body
     end
 
-    def self.create
-      connection({}).post(ROUTE)&.body
+    def self.create(id)
+      # params[:collection_id]
+      connection({ collection_id: id }).post(ROUTE)&.body
     end
 
     def self.destroy(id)
