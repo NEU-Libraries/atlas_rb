@@ -2,6 +2,6 @@
 
 module AtlasRb
   class Resource
-    include AtlasRb::FaradayHelper
+    extend AtlasRb::FaradayHelper
   end
 end
