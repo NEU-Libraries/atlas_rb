@@ -2,12 +2,11 @@
 
 require "faraday"
 require "faraday/multipart"
-require 'require_all'
 # require_relative "atlas_rb/version"
 # require_relative "atlas_rb/faraday_helper"
 # require_relative "atlas_rb/resource"
 #require_relative "atlas_rb/community"
-require_all "lib"
+Dir['./**/*.rb'].sort_by {|path| path.split("/").length }.each{ |f| require f }
 
 module AtlasRb
   class Error < StandardError; end
