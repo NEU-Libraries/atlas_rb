@@ -16,6 +16,10 @@ module AtlasRb
       connection({}).delete(ROUTE + id)
     end
 
+    def self.children(id)
+      connection({}).get(ROUTE + id + '/children')&.body
+    end
+
     def self.update(id, xml_path)
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
