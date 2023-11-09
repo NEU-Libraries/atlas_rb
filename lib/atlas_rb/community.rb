@@ -5,7 +5,7 @@ module AtlasRb
     ROUTE = "/communities/"
 
     def self.find(id)
-      JSON.parse(connection({}).get(ROUTE + id)&.body)
+      JSON.parse(connection({}).get(ROUTE + id)&.body)["community"]
     end
 
     def self.create(id = nil)
