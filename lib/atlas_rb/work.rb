@@ -23,5 +23,10 @@ module AtlasRb
                                                            File.basename(xml_path)) }
       JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body)
     end
+
+    def self.mods(id)
+      # optional second argument for pure json response?
+      JSON.parse(connection({}).get(ROUTE + id + '/mods.html')&.body)
+    end
   end
 end
