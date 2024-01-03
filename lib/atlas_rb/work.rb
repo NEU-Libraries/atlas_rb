@@ -5,12 +5,12 @@ module AtlasRb
     ROUTE = "/works/"
 
     def self.find(id)
-      JSON.parse(connection({}).get(ROUTE + id)&.body)
+      JSON.parse(connection({}).get(ROUTE + id)&.body)["work"]
     end
 
     def self.create(id)
       # params[:collection_id]
-      JSON.parse(connection({ collection_id: id }).post(ROUTE)&.body)
+      JSON.parse(connection({ collection_id: id }).post(ROUTE)&.body)["work"]
     end
 
     def self.destroy(id)

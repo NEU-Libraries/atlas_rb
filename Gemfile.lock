@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    atlas_rb (0.0.31)
+    atlas_rb (0.0.32)
       faraday (~> 2.7)
       faraday-multipart (~> 1)
 

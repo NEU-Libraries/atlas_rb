@@ -9,7 +9,7 @@ module AtlasRb
     end
 
     def self.create(id = nil)
-      JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body)
+      JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body)["community"]
     end
 
     def self.destroy(id)

@@ -10,7 +10,7 @@ module AtlasRb
 
     def self.create(id)
       # params[:parent_id]
-      JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body)
+      JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body)["collection"]
     end
 
     def self.destroy(id)
