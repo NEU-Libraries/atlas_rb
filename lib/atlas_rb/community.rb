@@ -26,5 +26,10 @@ module AtlasRb
                                                            File.basename(xml_path)) }
       JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body)
     end
+
+    def self.metadata(id, values)
+      payload = { metadata: values }
+      JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body)
+    end
   end
 end
