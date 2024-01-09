@@ -28,7 +28,7 @@ module AtlasRb
     end
 
     def self.metadata(id, values)
-      JSON.parse(connection(values).patch(ROUTE + id, payload)&.body)
+      JSON.parse(connection(values).patch(ROUTE + id)&.body)
     end
   end
 end
