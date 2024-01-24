@@ -8,7 +8,8 @@ module AtlasRb
         params: params,
         headers: { "Content-Type" => "application/json" }
       ) do |f|
-        f.use FaradayMiddleware::FollowRedirects, limit: 5
+        f.use Faraday::FollowRedirects::Middleware
+        f.response :follow_redirects
         f.adapter Faraday.default_adapter
       end
     end
