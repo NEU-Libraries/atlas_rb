@@ -2,6 +2,7 @@
 
 require "faraday"
 require "faraday/multipart"
+require "faraday/follow_redirects"
 require_relative "atlas_rb/version"
 require_relative "atlas_rb/faraday_helper"
 require_relative "atlas_rb/resource"
