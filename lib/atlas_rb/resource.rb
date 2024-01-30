@@ -5,7 +5,9 @@ module AtlasRb
     extend AtlasRb::FaradayHelper
 
     def self.find(id)
-      JSON.parse(connection({}).get('/resources/' + id)&.body)
+      result = JSON.parse(connection({}).get('/resources/' + id)&.body)
+      { "klass" => result.first[0].capitalize,
+        "resource" => result.first[1] }
     end
   end
 end
