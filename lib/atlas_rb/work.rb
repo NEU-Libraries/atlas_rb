@@ -25,8 +25,11 @@ module AtlasRb
     end
 
     def self.mods(id)
-      # optional second argument for pure json response?
       connection({}).get(ROUTE + id + '/mods.html')&.body
+    end
+
+    def self.xml(id)
+      connection({}).get(ROUTE + id + '/mods')&.body
     end
   end
 end

@@ -31,5 +31,13 @@ module AtlasRb
     def self.metadata(id, values)
       JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body)
     end
+
+    def self.mods(id)
+      connection({}).get(ROUTE + id + '/mods.html')&.body
+    end
+
+    def self.xml(id)
+      connection({}).get(ROUTE + id + '/mods')&.body
+    end
   end
 end
