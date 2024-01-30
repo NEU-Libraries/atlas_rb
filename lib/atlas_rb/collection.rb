@@ -32,12 +32,11 @@ module AtlasRb
       JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body)
     end
 
-    def self.mods(id)
-      connection({}).get(ROUTE + id + '/mods.html')&.body
-    end
-
-    def self.xml(id)
-      connection({}).get(ROUTE + id + '/mods')&.body
+    def self.mods(id, kind = nil)
+      # json default, html, xml
+      connection({}).get(
+        ROUTE + id + '/mods' + (kind.present? ? ".#{kind}" : '')
+        )&.body
     end
   end
 end
