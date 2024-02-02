@@ -14,7 +14,7 @@ module AtlasRb
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      multipart({ work_id: id }).post('/resources/preview', payload)&.body
+      multipart({}).post('/resources/preview', payload)&.body
     end
   end
 end
