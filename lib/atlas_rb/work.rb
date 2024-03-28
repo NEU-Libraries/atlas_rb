@@ -24,6 +24,10 @@ module AtlasRb
       JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body)
     end
 
+    def self.metadata(id, values)
+      JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body)
+    end
+
     def self.mods(id, kind = nil)
       # json default, html, xml
       connection({}).get(
