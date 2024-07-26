@@ -8,9 +8,12 @@ module AtlasRb
       JSON.parse(connection({}).get(ROUTE + id)&.body)["collection"]
     end
 
-    def self.create(id)
-      # params[:parent_id]
-      JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body)["collection"]
+    def self.create(id, xml_path = nil)
+      result = JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body)["collection"]
+      return unless xml_path.present?
+
+      update(result["id"], xml_path)
+      find(result["id"])
     end
 
     def self.destroy(id)
