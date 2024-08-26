@@ -10,7 +10,7 @@ require_relative "atlas_rb/community"
 require_relative "atlas_rb/collection"
 require_relative "atlas_rb/work"
 require_relative "atlas_rb/file_set"
-require_relative "atlas_rb/file"
+require_relative "atlas_rb/blob"
 
 module AtlasRb
   class Error < StandardError; end

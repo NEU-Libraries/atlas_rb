@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module AtlasRb
-  class File < Resource
+  class Blob < Resource
     ROUTE = "/files/"
   end
 
