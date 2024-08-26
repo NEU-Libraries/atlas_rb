@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    atlas_rb (0.0.54)
+    atlas_rb (0.0.56)
       faraday (~> 2.7)
       faraday-follow_redirects (~> 0.3.0)
       faraday-multipart (~> 1)
@@ -10,14 +10,14 @@ GEM
   remote: https://rubygems.org/
   specs:
     diff-lcs (1.5.0)
-    faraday (2.10.0)
-      faraday-net_http (>= 2.0, < 3.2)
+    faraday (2.11.0)
+      faraday-net_http (>= 2.0, < 3.4)
       logger
     faraday-follow_redirects (0.3.0)
       faraday (>= 1, < 3)
     faraday-multipart (1.0.4)
       multipart-post (~> 2)
-    faraday-net_http (3.1.1)
+    faraday-net_http (3.3.0)
       net-http
     logger (1.6.0)
     multipart-post (2.4.1)
