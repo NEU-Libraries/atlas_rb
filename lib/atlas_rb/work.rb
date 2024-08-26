@@ -10,7 +10,7 @@ module AtlasRb
 
     def self.create(id, xml_path = nil)
       result = JSON.parse(connection({ collection_id: id }).post(ROUTE)&.body)["work"]
-      return unless xml_path.present?
+      return result unless xml_path.present?
 
       update(result["id"], xml_path)
       find(result["id"])
