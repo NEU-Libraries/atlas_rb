@@ -17,6 +17,8 @@ module AtlasRb
   # Your code goes here...
 
   class Reset
+    extend AtlasRb::FaradayHelper
+
     def self.clean
       connection({}).get("/reset")&.body
     end
