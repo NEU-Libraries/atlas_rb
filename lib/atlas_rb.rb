@@ -15,4 +15,10 @@ require_relative "atlas_rb/blob"
 module AtlasRb
   class Error < StandardError; end
   # Your code goes here...
+
+  class Reset
+    def self.clean
+      connection({}).get("/reset")&.body
+    end
+  end
 end
