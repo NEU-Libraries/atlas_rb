@@ -5,7 +5,7 @@ module AtlasRb
     extend AtlasRb::FaradayHelper
 
     def self.login(nuid)
-      result = JSON.parse(connection({ nuid: nuid }).post('/token')&.body)
+      JSON.parse(connection({ nuid: nuid }).post('/token')&.body)["token"]
     end
 
     def self.groups(nuid)
