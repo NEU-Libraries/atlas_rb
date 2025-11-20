@@ -8,7 +8,7 @@ module AtlasRb
         params: params,
         headers: {
           "Content-Type" => "application/json",
-          "Authorization" => "Bearer vK6LgnPNq2tUWy8UrPwU",
+          "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}",
           "User" => "NUID #{nuid}"
         }
       ) do |f|
@@ -21,7 +21,7 @@ module AtlasRb
       Faraday.new(
         url: ENV.fetch("ATLAS_URL", nil),
         headers: {
-          "Authorization" => "Bearer vK6LgnPNq2tUWy8UrPwU",
+          "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}",
           "User" => "NUID #{nuid}"
         }
       ) do |f|
