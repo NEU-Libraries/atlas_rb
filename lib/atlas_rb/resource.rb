@@ -16,5 +16,9 @@ module AtlasRb
                                                            File.basename(xml_path)) }
       multipart({}).post('/resources/preview', payload)&.body
     end
+
+    def self.permissions(id)
+      result = JSON.parse(connection({}).get('/resources/' + id + '/permissions')&.body)["resource"]
+    end
   end
 end
