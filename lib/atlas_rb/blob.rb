@@ -5,7 +5,7 @@ module AtlasRb
     ROUTE = "/files/"
 
     def self.find(id)
-      connection({}).get(ROUTE + id)&.body
+      JSON.parse(connection({}).get(ROUTE + id)&.body)['blob']
     end
 
     def self.create(id, blob_path)
@@ -13,7 +13,7 @@ module AtlasRb
                                                           "application/octet-stream",
                                                           File.basename(blob_path)) }
 
-      multipart({ work_id: id }).post(ROUTE, payload)&.body
+      JSON.parse(multipart({ work_id: id }).post(ROUTE, payload)&.body)['blob']
     end
 
     def self.destroy(id)
@@ -24,7 +24,7 @@ module AtlasRb
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
                                                           "application/octet-stream",
                                                           File.basename(blob_path)) }
-      multipart({}).patch(ROUTE + id, payload)&.body
+      JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body)
     end
   end
 end
