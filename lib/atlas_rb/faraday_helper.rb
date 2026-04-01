@@ -17,7 +17,7 @@ module AtlasRb
       end
     end
 
-    def multipart(_params, nuid=nil)
+    def multipart(nuid=nil)
       Faraday.new(
         url: ENV.fetch("ATLAS_URL", nil),
         headers: {

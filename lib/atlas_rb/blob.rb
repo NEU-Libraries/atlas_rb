@@ -9,11 +9,12 @@ module AtlasRb
     end
 
     def self.create(id, blob_path)
-      payload = { binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
+      payload = { work_id: id,
+                  binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
                                                           "application/octet-stream",
                                                           File.basename(blob_path)) }
 
-      JSON.parse(multipart({ work_id: id }).post(ROUTE, payload)&.body)['blob']
+      JSON.parse(multipart({}).post(ROUTE, payload)&.body)['blob']
     end
 
     def self.destroy(id)
