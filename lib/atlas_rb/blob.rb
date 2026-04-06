@@ -8,8 +8,9 @@ module AtlasRb
       JSON.parse(connection({}).get(ROUTE + id)&.body)['blob']
     end
 
-    def self.create(id, blob_path)
+    def self.create(id, blob_path, original_filename)
       payload = { work_id: id,
+                  original_filename: original_filename,
                   binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
                                                           "application/octet-stream",
                                                           File.basename(blob_path)) }
