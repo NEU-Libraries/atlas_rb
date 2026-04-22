@@ -31,6 +31,10 @@ module AtlasRb
       JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body)
     end
 
+    def self.files(id)
+      JSON.parse(connection({}).get(ROUTE + id + '/files')&.body)
+    end
+
     def self.mods(id, kind = nil)
       # json default, html, xml
       connection({}).get(
