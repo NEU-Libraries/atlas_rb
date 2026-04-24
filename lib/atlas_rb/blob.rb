@@ -8,6 +8,17 @@ module AtlasRb
       JSON.parse(connection({}).get(ROUTE + id)&.body)['blob']
     end
 
+    def self.content(id, &chunk_handler)
+      headers = {}
+      connection({}).get("#{ROUTE}#{id}/content") do |req|
+        req.options.on_data = proc do |chunk, _bytes_received, env|
+          headers = env.response_headers if headers.empty? && env
+          chunk_handler.call(chunk)
+        end
+      end
+      headers
+    end
+
     def self.create(id, blob_path, original_filename)
       payload = { work_id: id,
                   original_filename: original_filename,
