@@ -39,6 +39,7 @@ Gem::Specification.new do |spec|
   #spec.add_dependency "require_all", "~> 3"
 
   spec.add_development_dependency "rspec", "~> 3.12"
+  spec.add_development_dependency "yard", "~> 0.9"
 
   # For more information and examples about making a new gem, checkout our
   # guide at: https://bundler.io/guides/creating_gem.html
