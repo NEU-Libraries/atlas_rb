@@ -14,7 +14,7 @@ require_relative "atlas_rb/file_set"
 require_relative "atlas_rb/blob"
 
 # Ruby client for the Atlas API — Northeastern University's institutional
-# digital repository (the successor to Cerberus).
+# digital repository.
 #
 # ## Configuration
 #

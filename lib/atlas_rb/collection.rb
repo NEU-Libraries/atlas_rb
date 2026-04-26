@@ -4,7 +4,7 @@ module AtlasRb
   # A grouping of {Work}s within a {Community}.
   #
   # Collections are the leaf containers in the organizational tree — they hold
-  # Works directly and cannot contain other Collections. Every Collection has
+  # Works directly. Every Collection has
   # exactly one parent Community.
   #
   # See also: {Community}, {Work}.
