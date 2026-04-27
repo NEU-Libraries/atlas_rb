@@ -35,8 +35,8 @@ module AtlasRb
     #   # => { "klass" => "Work", "resource" => { "id" => "abc123", "title" => "..." } }
     def self.find(id)
       result = JSON.parse(connection({}).get('/resources/' + id)&.body)
-      { "klass" => result.first[0].capitalize,
-        "resource" => result.first[1] }
+      AtlasRb::Mash.new("klass" => result.first[0].capitalize,
+                        "resource" => result.first[1])
     end
 
     # Validate a MODS XML document against Atlas's schema *without* persisting it.
@@ -66,7 +66,7 @@ module AtlasRb
     #   AtlasRb::Resource.permissions("abc123")
     #   # => { "id" => "abc123", "read" => [...], "write" => [...] }
     def self.permissions(id)
-      result = JSON.parse(connection({}).get('/resources/' + id + '/permissions')&.body)["resource"]
+      AtlasRb::Mash.new(JSON.parse(connection({}).get('/resources/' + id + '/permissions')&.body))["resource"]
     end
   end
 end

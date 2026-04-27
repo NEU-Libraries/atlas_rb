@@ -75,6 +75,11 @@ AtlasRb::Blob.create("w-789", path, name)  # blob under work w-789 with original
 
 ## End-to-end example
 
+JSON responses come back as `AtlasRb::Mash` (a `Hashie::Mash` subclass), so
+you can use dot access — `community.id` — or string-keyed access —
+`community["id"]` — interchangeably. Both return the same value, so existing
+string-keyed callers keep working.
+
 ```ruby
 require "atlas_rb"
 
@@ -82,19 +87,19 @@ ENV["ATLAS_URL"]   = "https://atlas.example.edu"
 ENV["ATLAS_TOKEN"] = "..."
 
 # 1. Build the org structure (each create can optionally seed MODS metadata).
-community  = AtlasRb::Community.create(nil,             "/tmp/community-mods.xml")
-collection = AtlasRb::Collection.create(community["id"], "/tmp/coll-mods.xml")
-work       = AtlasRb::Work.create(collection["id"],      "/tmp/work-mods.xml")
+community  = AtlasRb::Community.create(nil,           "/tmp/community-mods.xml")
+collection = AtlasRb::Collection.create(community.id, "/tmp/coll-mods.xml")
+work       = AtlasRb::Work.create(collection.id,      "/tmp/work-mods.xml")
 
 # 2. Upload a binary attached to the work, preserving the user-facing filename.
-blob = AtlasRb::Blob.create(work["id"], "/tmp/upload.tmp", "thesis.pdf")
+blob = AtlasRb::Blob.create(work.id, "/tmp/upload.tmp", "thesis.pdf")
 
 # 3. List everything attached to the work.
-AtlasRb::Work.files(work["id"])
+AtlasRb::Work.files(work.id)
 
 # 4. Stream the binary back without buffering it in memory.
 File.open("out.pdf", "wb") do |f|
-  headers = AtlasRb::Blob.content(blob["id"]) { |chunk| f.write(chunk) }
+  headers = AtlasRb::Blob.content(blob.id) { |chunk| f.write(chunk) }
   puts headers["content-type"]
 end
 

@@ -29,7 +29,7 @@ module AtlasRb
     def self.login(nuid)
       # JSON.parse(connection({ nuid: nuid }).post('/token')&.body)["token"]
       # need hash - id, name, token => ...
-      JSON.parse(connection({}, nuid).get('/user')&.body)
+      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get('/user')&.body))
     end
 
     # Fetch only the group memberships for an NUID.
@@ -49,7 +49,7 @@ module AtlasRb
       # token = user_details[:token] ...
       # TODO - need to update atlas login to give back name, id, and token upon logging in
       # result = JSON.parse(connection({ token: token }).post('/users/2/groups')&.body)["user"]["groups"]
-      JSON.parse(connection({}, nuid).get('/user')&.body)["groups"]
+      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get('/user')&.body))["groups"]
     end
   end
 end

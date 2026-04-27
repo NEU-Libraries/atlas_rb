@@ -24,7 +24,7 @@ module AtlasRb
     #   AtlasRb::Blob.find("b-321")
     #   # => { "id" => "b-321", "original_filename" => "scan.pdf", ... }
     def self.find(id)
-      JSON.parse(connection({}).get(ROUTE + id)&.body)['blob']
+      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id)&.body))['blob']
     end
 
     # Stream the Blob's binary content through a caller-supplied block.
@@ -77,7 +77,7 @@ module AtlasRb
                                                           "application/octet-stream",
                                                           File.basename(blob_path)) }
 
-      JSON.parse(multipart({}).post(ROUTE, payload)&.body)['blob']
+      AtlasRb::Mash.new(JSON.parse(multipart({}).post(ROUTE, payload)&.body))['blob']
     end
 
     # Delete a Blob (the bytes *and* the metadata record).
@@ -107,7 +107,7 @@ module AtlasRb
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
                                                           "application/octet-stream",
                                                           File.basename(blob_path)) }
-      JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body)
+      AtlasRb::Mash.new(JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body))
     end
   end
 end

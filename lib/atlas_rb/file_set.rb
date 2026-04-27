@@ -22,7 +22,7 @@ module AtlasRb
     # @example
     #   AtlasRb::FileSet.find("fs-001")
     def self.find(id)
-      JSON.parse(connection({}).get(ROUTE + id)&.body)["file_set"]
+      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id)&.body))["file_set"]
     end
 
     # Create a new FileSet under a Work.
@@ -38,7 +38,7 @@ module AtlasRb
     #   fs = AtlasRb::FileSet.create("w-789", "primary")
     #   AtlasRb::FileSet.update(fs["id"], "/tmp/article.pdf")
     def self.create(id, classification)
-      JSON.parse(connection({ work_id: id, classification: classification }).post(ROUTE)&.body)["file_set"]
+      AtlasRb::Mash.new(JSON.parse(connection({ work_id: id, classification: classification }).post(ROUTE)&.body))["file_set"]
     end
 
     # Delete a FileSet.
@@ -70,7 +70,7 @@ module AtlasRb
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
                                                           "application/octet-stream",
                                                           File.basename(blob_path)) }
-      JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body)
+      AtlasRb::Mash.new(JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body))
     end
   end
 end

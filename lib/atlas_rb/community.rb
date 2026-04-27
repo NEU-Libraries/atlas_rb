@@ -24,7 +24,7 @@ module AtlasRb
     #   AtlasRb::Community.find("c-123")
     #   # => { "id" => "c-123", "title" => "College of Engineering", ... }
     def self.find(id)
-      JSON.parse(connection({}).get(ROUTE + id)&.body)["community"]
+      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id)&.body))["community"]
     end
 
     # Create a new Community, optionally seeded with MODS metadata.
@@ -46,7 +46,7 @@ module AtlasRb
     # @example Sub-community seeded from MODS
     #   AtlasRb::Community.create("c-parent", "/tmp/dept-mods.xml")
     def self.create(id = nil, xml_path = nil)
-      result = JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body)["community"]
+      result = AtlasRb::Mash.new(JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body))["community"]
       return result unless xml_path.present?
 
       update(result["id"], xml_path)
@@ -72,7 +72,7 @@ module AtlasRb
     # @example
     #   AtlasRb::Community.children("c-123")
     def self.children(id)
-      JSON.parse(connection({}).get(ROUTE + id + '/children')&.body)
+      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id + '/children')&.body))
     end
 
     # Replace a Community's metadata by uploading a MODS XML document.
@@ -87,7 +87,7 @@ module AtlasRb
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body)
+      AtlasRb::Mash.new(JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body))
     end
 
     # Patch individual metadata fields without uploading a full MODS document.
@@ -100,7 +100,7 @@ module AtlasRb
     # @example
     #   AtlasRb::Community.metadata("c-123", title: "New Name")
     def self.metadata(id, values)
-      JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body)
+      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body))
     end
 
     # Fetch the Community's MODS representation in the requested format.

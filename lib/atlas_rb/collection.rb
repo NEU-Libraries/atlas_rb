@@ -23,7 +23,7 @@ module AtlasRb
     #   AtlasRb::Collection.find("col-456")
     #   # => { "id" => "col-456", "title" => "Faculty Publications", ... }
     def self.find(id)
-      JSON.parse(connection({}).get(ROUTE + id)&.body)["collection"]
+      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id)&.body))["collection"]
     end
 
     # Create a new Collection under an existing Community.
@@ -42,7 +42,7 @@ module AtlasRb
     # @example
     #   AtlasRb::Collection.create("c-123", "/tmp/collection-mods.xml")
     def self.create(id, xml_path = nil)
-      result = JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body)["collection"]
+      result = AtlasRb::Mash.new(JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body))["collection"]
       return result unless xml_path.present?
 
       update(result["id"], xml_path)
@@ -68,7 +68,7 @@ module AtlasRb
     # @example
     #   AtlasRb::Collection.children("col-456")
     def self.children(id)
-      JSON.parse(connection({}).get(ROUTE + id + '/children')&.body)
+      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id + '/children')&.body))
     end
 
     # Replace a Collection's metadata by uploading a MODS XML document.
@@ -83,7 +83,7 @@ module AtlasRb
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body)
+      AtlasRb::Mash.new(JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body))
     end
 
     # Patch individual metadata fields without uploading a full MODS document.
@@ -95,7 +95,7 @@ module AtlasRb
     # @example
     #   AtlasRb::Collection.metadata("col-456", title: "Renamed Collection")
     def self.metadata(id, values)
-      JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body)
+      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body))
     end
 
     # Fetch the Collection's MODS representation in the requested format.

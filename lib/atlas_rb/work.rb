@@ -23,7 +23,7 @@ module AtlasRb
     #   AtlasRb::Work.find("w-789")
     #   # => { "id" => "w-789", "title" => "An Article", ... }
     def self.find(id)
-      JSON.parse(connection({}).get(ROUTE + id)&.body)["work"]
+      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id)&.body))["work"]
     end
 
     # Create a new Work in an existing Collection.
@@ -45,7 +45,7 @@ module AtlasRb
     # @example Work seeded from MODS
     #   AtlasRb::Work.create("col-456", "/tmp/work-mods.xml")
     def self.create(id, xml_path = nil)
-      result = JSON.parse(connection({ collection_id: id }).post(ROUTE)&.body)["work"]
+      result = AtlasRb::Mash.new(JSON.parse(connection({ collection_id: id }).post(ROUTE)&.body))["work"]
       return result unless xml_path.present?
 
       update(result["id"], xml_path)
@@ -75,7 +75,7 @@ module AtlasRb
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body)
+      AtlasRb::Mash.new(JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body))
     end
 
     # Patch individual metadata fields without uploading a full MODS document.
@@ -87,7 +87,7 @@ module AtlasRb
     # @example
     #   AtlasRb::Work.metadata("w-789", title: "Revised Title")
     def self.metadata(id, values)
-      JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body)
+      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body))
     end
 
     # List the {FileSet}s and {Blob}s attached to a Work.
@@ -101,7 +101,7 @@ module AtlasRb
     # @example
     #   AtlasRb::Work.files("w-789")
     def self.files(id)
-      JSON.parse(connection({}).get(ROUTE + id + '/files')&.body)
+      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id + '/files')&.body))
     end
 
     # Fetch the Work's MODS representation in the requested format.
