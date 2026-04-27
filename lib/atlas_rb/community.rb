@@ -66,14 +66,18 @@ module AtlasRb
 
     # List the immediate children (sub-Communities and Collections) of a Community.
     #
+    # The endpoint returns just the noids; resolve each through
+    # {Resource.find} (which dispatches by type) when richer payloads are
+    # needed.
+    #
     # @param id [String] the parent Community ID.
-    # @return [Array<AtlasRb::Mash>] the child listing from
-    #   `GET /communities/<id>/children`, one entry per child.
+    # @return [Array<String>] child noids from `GET /communities/<id>/children`.
     #
     # @example
-    #   AtlasRb::Community.children("c-123").each { |child| puts child.noid }
+    #   AtlasRb::Community.children("c-123")
+    #   # => ["fn106x926", "kw52j804p"]
     def self.children(id)
-      JSON.parse(connection({}).get(ROUTE + id + '/children')&.body).map { |entry| AtlasRb::Mash.new(entry) }
+      JSON.parse(connection({}).get(ROUTE + id + '/children')&.body)
     end
 
     # Replace a Community's metadata by uploading a MODS XML document.

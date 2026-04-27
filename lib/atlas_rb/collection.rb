@@ -62,14 +62,17 @@ module AtlasRb
 
     # List the Works in a Collection.
     #
+    # The endpoint returns just the noids; resolve each through
+    # {Resource.find} (or {Work.find}) when a full payload is needed.
+    #
     # @param id [String] the Collection ID.
-    # @return [Array<AtlasRb::Mash>] the child listing from
-    #   `GET /collections/<id>/children`, one entry per Work.
+    # @return [Array<String>] child noids from `GET /collections/<id>/children`.
     #
     # @example
-    #   AtlasRb::Collection.children("col-456").each { |work| puts work.noid }
+    #   AtlasRb::Collection.children("col-456")
+    #   # => ["w-789", "w-790"]
     def self.children(id)
-      JSON.parse(connection({}).get(ROUTE + id + '/children')&.body).map { |entry| AtlasRb::Mash.new(entry) }
+      JSON.parse(connection({}).get(ROUTE + id + '/children')&.body)
     end
 
     # Replace a Collection's metadata by uploading a MODS XML document.
