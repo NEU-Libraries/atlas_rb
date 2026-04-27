@@ -96,12 +96,13 @@ module AtlasRb
     # render each file's display name, size, and download URL.
     #
     # @param id [String] the Work ID.
-    # @return [Hash] the listing from `GET /works/<id>/files`.
+    # @return [Array<AtlasRb::Mash>] the listing from `GET /works/<id>/files`,
+    #   one entry per attached file.
     #
     # @example
-    #   AtlasRb::Work.files("w-789")
+    #   AtlasRb::Work.files("w-789").each { |f| puts f.label }
     def self.files(id)
-      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id + '/files')&.body))
+      JSON.parse(connection({}).get(ROUTE + id + '/files')&.body).map { |entry| AtlasRb::Mash.new(entry) }
     end
 
     # Fetch the Work's MODS representation in the requested format.
