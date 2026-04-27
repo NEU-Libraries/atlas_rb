@@ -63,12 +63,13 @@ module AtlasRb
     # List the Works in a Collection.
     #
     # @param id [String] the Collection ID.
-    # @return [Hash] the child listing from `GET /collections/<id>/children`.
+    # @return [Array<AtlasRb::Mash>] the child listing from
+    #   `GET /collections/<id>/children`, one entry per Work.
     #
     # @example
-    #   AtlasRb::Collection.children("col-456")
+    #   AtlasRb::Collection.children("col-456").each { |work| puts work.noid }
     def self.children(id)
-      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id + '/children')&.body))
+      JSON.parse(connection({}).get(ROUTE + id + '/children')&.body).map { |entry| AtlasRb::Mash.new(entry) }
     end
 
     # Replace a Collection's metadata by uploading a MODS XML document.
