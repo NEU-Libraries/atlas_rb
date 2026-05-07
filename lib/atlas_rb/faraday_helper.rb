@@ -29,14 +29,16 @@ module AtlasRb
     # @example Fetching a community
     #   AtlasRb::Community.connection({}).get('/communities/abc123')
     def connection(params, nuid=nil)
+      headers = {
+        "Content-Type" => "application/json",
+        "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}"
+      }
+      headers["User"] = "NUID #{nuid}" if nuid
+
       Faraday.new(
         url: ENV.fetch("ATLAS_URL", nil),
         params: params,
-        headers: {
-          "Content-Type" => "application/json",
-          "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}",
-          "User" => "NUID #{nuid}"
-        }
+        headers: headers
       ) do |f|
         f.response :follow_redirects
         f.adapter Faraday.default_adapter
@@ -62,12 +64,14 @@ module AtlasRb
     #   }
     #   AtlasRb::Blob.multipart({}).post('/files/', payload)
     def multipart(nuid=nil)
+      headers = {
+        "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}"
+      }
+      headers["User"] = "NUID #{nuid}" if nuid
+
       Faraday.new(
         url: ENV.fetch("ATLAS_URL", nil),
-        headers: {
-          "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}",
-          "User" => "NUID #{nuid}"
-        }
+        headers: headers
       ) do |f|
         f.request :multipart
         f.request :url_encoded
