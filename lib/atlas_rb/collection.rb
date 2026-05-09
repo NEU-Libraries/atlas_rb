@@ -60,6 +60,41 @@ module AtlasRb
       connection({}).delete(ROUTE + id)
     end
 
+    # Tombstone (withdraw) a Collection.
+    #
+    # The Collection remains in Atlas storage but is marked as withdrawn:
+    # search and show pages return a withdrawn stub for every user. Atlas
+    # rejects the request with `422 has_live_children` if the Collection
+    # still has live (non-tombstoned) Works.
+    #
+    # @param id [String] the Collection ID.
+    # @param nuid [String] the acting user's NUID, stamped on the resource
+    #   as `tombstoned_by` for audit purposes.
+    # @return [Faraday::Response] the raw response. `200`/`204` on success;
+    #   `422` with `{"code":"has_live_children"}` if the Collection is not empty.
+    #
+    # @example
+    #   AtlasRb::Collection.tombstone("col-456", nuid: "000000002")
+    def self.tombstone(id, nuid:)
+      connection({}, nuid).post(ROUTE + id + '/tombstone')
+    end
+
+    # Restore a previously tombstoned Collection.
+    #
+    # **Operator-only.** Restoration is intentionally not exposed in any
+    # end-user UI; call this from a Rails console session (or a future
+    # admin panel) when the library has decided an object should come back.
+    #
+    # @param id [String] the Collection ID.
+    # @param nuid [String] the acting user's NUID.
+    # @return [Faraday::Response] the raw response.
+    #
+    # @example Operator restoring from `bundle exec rails console`
+    #   AtlasRb::Collection.restore("col-456", nuid: "000000002")
+    def self.restore(id, nuid:)
+      connection({}, nuid).post(ROUTE + id + '/restore')
+    end
+
     # List the Works in a Collection.
     #
     # The endpoint returns just the noids; resolve each through

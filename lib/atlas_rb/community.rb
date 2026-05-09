@@ -64,6 +64,41 @@ module AtlasRb
       connection({}).delete(ROUTE + id)
     end
 
+    # Tombstone (withdraw) a Community.
+    #
+    # The Community remains in Atlas storage but is marked as withdrawn:
+    # search and show pages return a withdrawn stub for every user. Atlas
+    # rejects the request with `422 has_live_children` if the Community
+    # still has live (non-tombstoned) members.
+    #
+    # @param id [String] the Community ID.
+    # @param nuid [String] the acting user's NUID, stamped on the resource
+    #   as `tombstoned_by` for audit purposes.
+    # @return [Faraday::Response] the raw response. `200`/`204` on success;
+    #   `422` with `{"code":"has_live_children"}` if the Community is not empty.
+    #
+    # @example
+    #   AtlasRb::Community.tombstone("c-123", nuid: "000000002")
+    def self.tombstone(id, nuid:)
+      connection({}, nuid).post(ROUTE + id + '/tombstone')
+    end
+
+    # Restore a previously tombstoned Community.
+    #
+    # **Operator-only.** Restoration is intentionally not exposed in any
+    # end-user UI; call this from a Rails console session (or a future
+    # admin panel) when the library has decided an object should come back.
+    #
+    # @param id [String] the Community ID.
+    # @param nuid [String] the acting user's NUID.
+    # @return [Faraday::Response] the raw response.
+    #
+    # @example Operator restoring from `bundle exec rails console`
+    #   AtlasRb::Community.restore("c-123", nuid: "000000002")
+    def self.restore(id, nuid:)
+      connection({}, nuid).post(ROUTE + id + '/restore')
+    end
+
     # List the immediate children (sub-Communities and Collections) of a Community.
     #
     # The endpoint returns just the noids; resolve each through

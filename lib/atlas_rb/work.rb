@@ -63,6 +63,41 @@ module AtlasRb
       connection({}).delete(ROUTE + id)
     end
 
+    # Tombstone (withdraw) a Work.
+    #
+    # The Work remains in Atlas storage along with its FileSets and Blobs,
+    # but is marked as withdrawn: search and show pages return a withdrawn
+    # stub for every user. Unlike Communities and Collections, Works are
+    # always tombstoneable regardless of how many files they hold — the
+    # FileSets and Blobs ride along.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String] the acting user's NUID, stamped on the resource
+    #   as `tombstoned_by` for audit purposes.
+    # @return [Faraday::Response] the raw response.
+    #
+    # @example
+    #   AtlasRb::Work.tombstone("w-789", nuid: "000000002")
+    def self.tombstone(id, nuid:)
+      connection({}, nuid).post(ROUTE + id + '/tombstone')
+    end
+
+    # Restore a previously tombstoned Work.
+    #
+    # **Operator-only.** Restoration is intentionally not exposed in any
+    # end-user UI; call this from a Rails console session (or a future
+    # admin panel) when the library has decided an object should come back.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String] the acting user's NUID.
+    # @return [Faraday::Response] the raw response.
+    #
+    # @example Operator restoring from `bundle exec rails console`
+    #   AtlasRb::Work.restore("w-789", nuid: "000000002")
+    def self.restore(id, nuid:)
+      connection({}, nuid).post(ROUTE + id + '/restore')
+    end
+
     # Replace a Work's metadata by uploading a MODS XML document.
     #
     # @param id [String] the Work ID.
