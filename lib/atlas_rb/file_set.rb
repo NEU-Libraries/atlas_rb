@@ -31,14 +31,24 @@ module AtlasRb
     # @param classification [String] role tag for the FileSet — e.g.
     #   `"primary"`, `"supplemental"`, `"thumbnail"`. The exact set is
     #   defined by the Atlas server.
+    # @param idempotency_key [String, nil] optional UUID. A repeat call with
+    #   the same key returns the originally-created FileSet instead of
+    #   creating a new one. See {AtlasRb::Work.create} for full semantics.
     # @return [Hash] the created `"file_set"` payload, including its `"id"`
     #   which can then be passed to {.update} to attach a binary.
     #
     # @example
     #   fs = AtlasRb::FileSet.create("w-789", "primary")
     #   AtlasRb::FileSet.update(fs["id"], "/tmp/article.pdf")
-    def self.create(id, classification)
-      AtlasRb::Mash.new(JSON.parse(connection({ work_id: id, classification: classification }).post(ROUTE)&.body))["file_set"]
+    #
+    # @example Retry-safe bulk-deposit create
+    #   key = SecureRandom.uuid
+    #   AtlasRb::FileSet.create("w-789", "primary", idempotency_key: key)
+    def self.create(id, classification, idempotency_key: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({ work_id: id, classification: classification }, nil,
+                   idempotency_key: idempotency_key).post(ROUTE)&.body
+      ))["file_set"]
     end
 
     # Delete a FileSet.

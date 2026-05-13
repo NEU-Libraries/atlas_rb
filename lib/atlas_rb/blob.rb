@@ -65,19 +65,29 @@ module AtlasRb
     # @param blob_path [String] path to the binary file on disk to upload.
     # @param original_filename [String] the user-facing filename Atlas
     #   should record (e.g. `"final_thesis.pdf"`).
+    # @param idempotency_key [String, nil] optional UUID. A repeat call with
+    #   the same key returns the originally-created Blob instead of creating
+    #   a new one. See {AtlasRb::Work.create} for full semantics.
     # @return [Hash] the created `"blob"` payload, including its `"id"`.
     #
     # @example
     #   AtlasRb::Blob.create("w-789", "/tmp/upload.tmp", "final_thesis.pdf")
     #   # => { "id" => "b-321", "original_filename" => "final_thesis.pdf", ... }
-    def self.create(id, blob_path, original_filename)
+    #
+    # @example Retry-safe bulk-deposit create
+    #   key = SecureRandom.uuid
+    #   AtlasRb::Blob.create("w-789", "/tmp/upload.tmp", "thesis.pdf",
+    #                        idempotency_key: key)
+    def self.create(id, blob_path, original_filename, idempotency_key: nil)
       payload = { work_id: id,
                   original_filename: original_filename,
                   binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
                                                           "application/octet-stream",
                                                           File.basename(blob_path)) }
 
-      AtlasRb::Mash.new(JSON.parse(multipart({}).post(ROUTE, payload)&.body))['blob']
+      AtlasRb::Mash.new(JSON.parse(
+        multipart(nil, idempotency_key: idempotency_key).post(ROUTE, payload)&.body
+      ))['blob']
     end
 
     # Delete a Blob (the bytes *and* the metadata record).

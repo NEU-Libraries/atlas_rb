@@ -73,6 +73,34 @@ AtlasRb::FileSet.create("w-789", "primary") # file_set under work w-789, classif
 AtlasRb::Blob.create("w-789", path, name)  # blob under work w-789 with original filename preserved
 ```
 
+`Work.create`, `FileSet.create`, and `Blob.create` each accept an optional
+`idempotency_key:` kwarg for retry-safe bulk-deposit jobs. The caller
+generates the UUID; the Atlas server enforces uniqueness scoped to the
+acting user. A repeat call with the same key returns the originally-created
+resource (or `410` if it has since been tombstoned). The gem does **not**
+generate keys, cache responses, or retry — those concerns belong to the
+calling job runner (e.g. Cerberus's Solid Queue).
+
+```ruby
+key = SecureRandom.uuid
+AtlasRb::Work.create("col-456", idempotency_key: key)
+AtlasRb::FileSet.create("w-789", "primary", idempotency_key: key)
+AtlasRb::Blob.create("w-789", path, name, idempotency_key: key)
+```
+
+### Listing and monitoring Works
+
+`Work.list` exposes the paginated `GET /works` index, with an optional
+`in_progress:` filter for finding deposits that haven't yet been marked
+complete. `Work.complete` flips a Work's `in_progress` flag to `false`
+once a bulk-deposit job confirms all expected children have been deposited.
+
+```ruby
+AtlasRb::Work.list(in_progress: true)             # stuck deposits
+AtlasRb::Work.list(in_progress: false, page: 2)   # completed deposits, page 2
+AtlasRb::Work.complete("w-789")                   # mark w-789 done
+```
+
 ## End-to-end example
 
 JSON responses come back as `AtlasRb::Mash` (a `Hashie::Mash` subclass), so

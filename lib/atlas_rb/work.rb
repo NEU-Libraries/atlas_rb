@@ -26,6 +26,33 @@ module AtlasRb
       AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id)&.body))["work"]
     end
 
+    # List Works, paginated.
+    #
+    # Wraps `GET /works`. Returns the full pagination envelope rather than a
+    # bare array so callers can page through results — the shape matches
+    # {AtlasRb::Community.children} and {AtlasRb::Collection.children}.
+    #
+    # @param in_progress [Boolean, nil] when set, filter to Works whose
+    #   `in_progress` flag matches. Omit (or pass `nil`) for "all works".
+    # @param page [Integer, nil] 1-indexed page number.
+    # @param per_page [Integer, nil] page size override.
+    # @return [AtlasRb::Mash] `{ "works" => [...], "pagination" => {...} }`.
+    #   Each entry in `"works"` is a Work summary (`id`, `title`,
+    #   `description`, `in_progress`).
+    #
+    # @example Find stuck deposits
+    #   AtlasRb::Work.list(in_progress: true)
+    #
+    # @example Page through all works
+    #   AtlasRb::Work.list(page: 2, per_page: 50)
+    def self.list(in_progress: nil, page: nil, per_page: nil)
+      params = {}
+      params[:in_progress] = in_progress unless in_progress.nil?
+      params[:page]        = page        if page
+      params[:per_page]    = per_page    if per_page
+      AtlasRb::Mash.new(JSON.parse(connection(params).get(ROUTE)&.body))
+    end
+
     # Create a new Work in an existing Collection.
     #
     # **Note**: unlike {Community.create} and {Collection.create}, the `id`
@@ -36,6 +63,14 @@ module AtlasRb
     # @param xml_path [String, nil] optional path to a MODS XML file. When
     #   given, the Work is created and immediately patched with the metadata
     #   in the file.
+    # @param idempotency_key [String, nil] optional UUID. A repeat call with
+    #   the same key returns the originally-created Work instead of creating
+    #   a new one (or `410` if it has since been tombstoned, or `410` with
+    #   no body if it has been hard-deleted). Keys are scoped to the acting
+    #   user and only apply to the initial `POST /works` — the optional
+    #   follow-up PATCH/GET when `xml_path` is given do not carry the key.
+    #   The caller (e.g. Cerberus's Solid Queue job) generates and persists
+    #   the UUID; this gem does not mint keys.
     # @return [Hash] the created Work payload (post-update if `xml_path` was
     #   supplied).
     #
@@ -44,8 +79,14 @@ module AtlasRb
     #
     # @example Work seeded from MODS
     #   AtlasRb::Work.create("col-456", "/tmp/work-mods.xml")
-    def self.create(id, xml_path = nil)
-      result = AtlasRb::Mash.new(JSON.parse(connection({ collection_id: id }).post(ROUTE)&.body))["work"]
+    #
+    # @example Retry-safe bulk-deposit create
+    #   key = SecureRandom.uuid
+    #   AtlasRb::Work.create("col-456", idempotency_key: key)
+    def self.create(id, xml_path = nil, idempotency_key: nil)
+      result = AtlasRb::Mash.new(JSON.parse(
+        connection({ collection_id: id }, nil, idempotency_key: idempotency_key).post(ROUTE)&.body
+      ))["work"]
       return result unless xml_path.present?
 
       update(result["id"], xml_path)
@@ -80,6 +121,29 @@ module AtlasRb
     #   AtlasRb::Work.tombstone("w-789", nuid: "000000002")
     def self.tombstone(id, nuid:)
       connection({}, nuid).post(ROUTE + id + '/tombstone')
+    end
+
+    # Mark a Work complete.
+    #
+    # Cerberus's bulk-deposit job calls this once it has confirmed all
+    # expected children (FileSets / Blobs) are deposited. Atlas's monitoring
+    # query `GET /works?in_progress=true` then drops this Work from the
+    # "stuck" list.
+    #
+    # Idempotent on the server: calling `complete` on an already-complete
+    # Work is a no-op — Atlas simply re-saves with `in_progress: false`.
+    # Atlas does not currently stamp a `completed_by` audit field; the
+    # `nuid:` parameter is plumbed through for parity with the other
+    # lifecycle bindings and in case Atlas adds completion audit later.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional NUID of the acting user.
+    # @return [Faraday::Response] the raw response. Status `200` on success.
+    #
+    # @example
+    #   AtlasRb::Work.complete("w-789")
+    def self.complete(id, nuid: nil)
+      connection({}, nuid).post(ROUTE + id + '/complete')
     end
 
     # Restore a previously tombstoned Work.
