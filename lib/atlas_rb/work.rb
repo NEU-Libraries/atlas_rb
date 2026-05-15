@@ -189,19 +189,28 @@ module AtlasRb
       AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body))
     end
 
-    # List the {FileSet}s and {Blob}s attached to a Work.
+    # List the assets attached to a Work — {Blob}s and {Delegate}s alike.
     #
     # Useful for building download UIs — the response includes enough to
-    # render each file's display name, size, and download URL.
+    # render each entry's display name, size or `uri`, and download URL.
+    # The shape is polymorphic: Blob-backed entries carry fields like
+    # `size`, while Delegate-backed entries carry `uri`. Callers should
+    # duck-type on the field they need rather than expecting a single
+    # schema.
     #
     # @param id [String] the Work ID.
-    # @return [Array<AtlasRb::Mash>] the listing from `GET /works/<id>/files`,
-    #   one entry per attached file.
+    # @return [Array<AtlasRb::Mash>] the listing from `GET /works/<id>/assets`,
+    #   one entry per attached asset.
     #
     # @example
-    #   AtlasRb::Work.files("w-789").each { |f| puts f.label }
+    #   AtlasRb::Work.assets("w-789").each { |a| puts a.label }
+    def self.assets(id)
+      JSON.parse(connection({}).get(ROUTE + id + '/assets')&.body).map { |entry| AtlasRb::Mash.new(entry) }
+    end
+
+    # @deprecated Use {.assets} instead. Will be removed in the next release.
     def self.files(id)
-      JSON.parse(connection({}).get(ROUTE + id + '/files')&.body).map { |entry| AtlasRb::Mash.new(entry) }
+      assets(id)
     end
 
     # Fetch the Work's MODS representation in the requested format.
