@@ -272,11 +272,6 @@ module AtlasRb
       JSON.parse(connection({}).get(ROUTE + id + '/assets')&.body).map { |entry| AtlasRb::Mash.new(entry) }
     end
 
-    # @deprecated Use {.assets} instead. Will be removed in the next release.
-    def self.files(id)
-      assets(id)
-    end
-
     # Fetch the Work's MODS representation in the requested format.
     #
     # @param id [String] the Work ID.

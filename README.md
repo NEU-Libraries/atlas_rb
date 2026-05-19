@@ -123,7 +123,7 @@ work       = AtlasRb::Work.create(collection.id,      "/tmp/work-mods.xml")
 blob = AtlasRb::Blob.create(work.id, "/tmp/upload.tmp", "thesis.pdf")
 
 # 3. List everything attached to the work.
-AtlasRb::Work.files(work.id)
+AtlasRb::Work.assets(work.id)
 
 # 4. Stream the binary back without buffering it in memory.
 File.open("out.pdf", "wb") do |f|
