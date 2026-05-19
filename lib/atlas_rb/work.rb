@@ -177,7 +177,13 @@ module AtlasRb
       AtlasRb::Mash.new(JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body))
     end
 
-    # Patch individual metadata fields without uploading a full MODS document.
+    # Patch individual descriptive-metadata fields without uploading a
+    # full MODS document.
+    #
+    # Scoped to user-authored descriptive metadata only. Programmatic
+    # writes of machine-set Delegate URIs (thumbnails, image
+    # derivatives) have their own purpose-specific endpoints — see
+    # {.set_thumbnails} and {.set_image_derivatives}.
     #
     # @param id [String] the Work ID.
     # @param values [Hash] field-level metadata updates.
@@ -187,6 +193,64 @@ module AtlasRb
     #   AtlasRb::Work.metadata("w-789", title: "Revised Title")
     def self.metadata(id, values)
       AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body))
+    end
+
+    # Attach the three thumbnail/preview Delegate URIs to a Work.
+    #
+    # Purpose-specific PATCH for the `thumbnail_image` /
+    # `thumbnail_image_2x` / `preview_image` Delegate roles. Atlas
+    # dispatches each URI to its matching role via `DelegateUpdater`.
+    # Distinct from {.metadata} — these are machine-set IIIF URIs, not
+    # user-authored descriptive content. Missing keys are left
+    # untouched server-side; only the URIs you pass are upserted.
+    #
+    # @param id [String] the Work ID.
+    # @param thumbnail [String, nil] IIIF URI for the ~85² thumbnail.
+    # @param thumbnail_2x [String, nil] IIIF URI for the ~170² 2x thumbnail.
+    # @param preview [String, nil] IIIF URI for the ~500w preview image.
+    # @return [AtlasRb::Mash] the parsed JSON response.
+    #
+    # @example
+    #   AtlasRb::Work.set_thumbnails(
+    #     "w-789",
+    #     thumbnail:    "https://iiif.example.edu/iiif/3/abc.jp2/full/!85,85/0/default.jpg",
+    #     thumbnail_2x: "https://iiif.example.edu/iiif/3/abc.jp2/full/!170,170/0/default.jpg",
+    #     preview:      "https://iiif.example.edu/iiif/3/abc.jp2/full/500,/0/default.jpg"
+    #   )
+    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil)
+      body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}).patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
+      ))
+    end
+
+    # Attach the three image-derivative Delegate URIs to a Work.
+    #
+    # Sibling of {.set_thumbnails} for the `small_image` /
+    # `medium_image` / `large_image` Delegate roles. Atlas dispatches
+    # each URI to its matching role via `DelegateUpdater`. The
+    # resulting Delegates are downloadable and surface through
+    # {.assets} for the downloads UI. Missing keys are left untouched
+    # server-side; only the URIs you pass are upserted.
+    #
+    # @param id [String] the Work ID.
+    # @param small [String, nil] IIIF URI for the small derivative.
+    # @param medium [String, nil] IIIF URI for the medium derivative.
+    # @param large [String, nil] IIIF URI for the large derivative.
+    # @return [AtlasRb::Mash] the parsed JSON response.
+    #
+    # @example
+    #   AtlasRb::Work.set_image_derivatives(
+    #     "w-789",
+    #     small:  "https://iiif.example.edu/iiif/3/abc.jp2/full/800,/0/default.jpg",
+    #     medium: "https://iiif.example.edu/iiif/3/abc.jp2/full/1600,/0/default.jpg",
+    #     large:  "https://iiif.example.edu/iiif/3/abc.jp2/full/full/0/default.jpg"
+    #   )
+    def self.set_image_derivatives(id, small: nil, medium: nil, large: nil)
+      body = { small: small, medium: medium, large: large }.compact
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}).patch(ROUTE + id + '/image_derivatives', JSON.dump(body))&.body
+      ))
     end
 
     # List the assets attached to a Work — {Blob}s and {Delegate}s alike.

@@ -125,7 +125,12 @@ module AtlasRb
       AtlasRb::Mash.new(JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body))
     end
 
-    # Patch individual metadata fields without uploading a full MODS document.
+    # Patch individual descriptive-metadata fields without uploading a
+    # full MODS document.
+    #
+    # Scoped to user-authored descriptive metadata only. Programmatic
+    # writes of machine-set Delegate URIs (thumbnails) have their own
+    # purpose-specific endpoint — see {.set_thumbnails}.
     #
     # @param id [String] the Collection ID.
     # @param values [Hash] field-level metadata updates.
@@ -135,6 +140,33 @@ module AtlasRb
     #   AtlasRb::Collection.metadata("col-456", title: "Renamed Collection")
     def self.metadata(id, values)
       AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body))
+    end
+
+    # Attach the three thumbnail/preview Delegate URIs to a Collection.
+    #
+    # Collection-level mirror of {Work.set_thumbnails}. Atlas dispatches
+    # each non-blank URI to its matching Delegate role
+    # (`thumbnail_image` / `thumbnail_image_2x` / `preview_image`) via
+    # `DelegateUpdater`. Missing keys are left untouched.
+    #
+    # @param id [String] the Collection ID.
+    # @param thumbnail [String, nil] IIIF URI for the ~85² thumbnail.
+    # @param thumbnail_2x [String, nil] IIIF URI for the ~170² 2x thumbnail.
+    # @param preview [String, nil] IIIF URI for the ~500w preview image.
+    # @return [AtlasRb::Mash] the parsed JSON response.
+    #
+    # @example
+    #   AtlasRb::Collection.set_thumbnails(
+    #     "col-456",
+    #     thumbnail:    "https://iiif.example.edu/iiif/3/c.jp2/full/!85,85/0/default.jpg",
+    #     thumbnail_2x: "https://iiif.example.edu/iiif/3/c.jp2/full/!170,170/0/default.jpg",
+    #     preview:      "https://iiif.example.edu/iiif/3/c.jp2/full/500,/0/default.jpg"
+    #   )
+    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil)
+      body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}).patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
+      ))
     end
 
     # Fetch the Collection's MODS representation in the requested format.
