@@ -16,14 +16,17 @@ module AtlasRb
     # Fetch a single Collection by ID.
     #
     # @param id [String] the Collection ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the `"collection"` object, already unwrapped from the
     #   JSON response.
     #
     # @example
     #   AtlasRb::Collection.find("col-456")
     #   # => { "id" => "col-456", "title" => "Faculty Publications", ... }
-    def self.find(id)
-      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id)&.body))["collection"]
+    def self.find(id, nuid: nil)
+      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get(ROUTE + id)&.body))["collection"]
     end
 
     # Create a new Collection under an existing Community.
@@ -36,13 +39,16 @@ module AtlasRb
     # @param xml_path [String, nil] optional path to a MODS XML file used to
     #   seed metadata. When given, the Collection is created and immediately
     #   patched with the metadata in the file.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the created Collection payload (post-update if
     #   `xml_path` was supplied).
     #
     # @example
     #   AtlasRb::Collection.create("c-123", "/tmp/collection-mods.xml")
-    def self.create(id, xml_path = nil)
-      result = AtlasRb::Mash.new(JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body))["collection"]
+    def self.create(id, xml_path = nil, nuid: nil)
+      result = AtlasRb::Mash.new(JSON.parse(connection({ parent_id: id }, nuid).post(ROUTE)&.body))["collection"]
       return result unless xml_path.present?
 
       update(result["id"], xml_path)
@@ -134,12 +140,15 @@ module AtlasRb
     #
     # @param id [String] the Collection ID.
     # @param values [Hash] field-level metadata updates.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the parsed JSON response.
     #
     # @example
     #   AtlasRb::Collection.metadata("col-456", title: "Renamed Collection")
-    def self.metadata(id, values)
-      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body))
+    def self.metadata(id, values, nuid: nil)
+      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }, nuid).patch(ROUTE + id)&.body))
     end
 
     # Attach the three thumbnail/preview Delegate URIs to a Collection.
@@ -153,6 +162,9 @@ module AtlasRb
     # @param thumbnail [String, nil] IIIF URI for the ~85² thumbnail.
     # @param thumbnail_2x [String, nil] IIIF URI for the ~170² 2x thumbnail.
     # @param preview [String, nil] IIIF URI for the ~500w preview image.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [AtlasRb::Mash] the parsed JSON response.
     #
     # @example
@@ -162,10 +174,10 @@ module AtlasRb
     #     thumbnail_2x: "https://iiif.example.edu/iiif/3/c.jp2/full/!170,170/0/default.jpg",
     #     preview:      "https://iiif.example.edu/iiif/3/c.jp2/full/500,/0/default.jpg"
     #   )
-    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil)
+    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil)
       body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
       AtlasRb::Mash.new(JSON.parse(
-        connection({}).patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
+        connection({}, nuid).patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
       ))
     end
 
@@ -174,13 +186,16 @@ module AtlasRb
     # @param id [String] the Collection ID.
     # @param kind [String, nil] one of `"json"` (default), `"html"`, or
     #   `"xml"`.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [String] the raw response body in the requested format.
     #
     # @example
     #   AtlasRb::Collection.mods("col-456", "xml")
-    def self.mods(id, kind = nil)
+    def self.mods(id, kind = nil, nuid: nil)
       # json default, html, xml
-      connection({}).get(
+      connection({}, nuid).get(
         ROUTE + id + '/mods' + (kind.present? ? ".#{kind}" : '')
         )&.body
     end
