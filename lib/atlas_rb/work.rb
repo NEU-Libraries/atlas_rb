@@ -39,6 +39,9 @@ module AtlasRb
     #   `in_progress` flag matches. Omit (or pass `nil`) for "all works".
     # @param page [Integer, nil] 1-indexed page number.
     # @param per_page [Integer, nil] page size override.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [AtlasRb::Mash] `{ "works" => [...], "pagination" => {...} }`.
     #   Each entry in `"works"` is a Work summary (`id`, `title`,
     #   `description`, `in_progress`).
@@ -48,12 +51,12 @@ module AtlasRb
     #
     # @example Page through all works
     #   AtlasRb::Work.list(page: 2, per_page: 50)
-    def self.list(in_progress: nil, page: nil, per_page: nil)
+    def self.list(in_progress: nil, page: nil, per_page: nil, nuid: nil)
       params = {}
       params[:in_progress] = in_progress unless in_progress.nil?
       params[:page]        = page        if page
       params[:per_page]    = per_page    if per_page
-      AtlasRb::Mash.new(JSON.parse(connection(params).get(ROUTE)&.body))
+      AtlasRb::Mash.new(JSON.parse(connection(params, nuid).get(ROUTE)&.body))
     end
 
     # Create a new Work in an existing Collection.
@@ -102,12 +105,15 @@ module AtlasRb
     # Delete a Work.
     #
     # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Faraday::Response] the raw delete response.
     #
     # @example
     #   AtlasRb::Work.destroy("w-789")
-    def self.destroy(id)
-      connection({}).delete(ROUTE + id)
+    def self.destroy(id, nuid: nil)
+      connection({}, nuid).delete(ROUTE + id)
     end
 
     # Tombstone (withdraw) a Work.
