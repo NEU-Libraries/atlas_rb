@@ -23,14 +23,17 @@ module AtlasRb
     # Fetch a single Delegate by NOID or `valkyrie_id`.
     #
     # @param id [String] the Delegate's NOID or `valkyrie_id`.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [AtlasRb::Mash] the `"delegate"` object, already unwrapped —
     #   includes `id`, `valkyrie_id`, `use`, `uri`, `mime_type`,
     #   `original_filename`, `label`, and tombstone fields.
     #
     # @example
     #   AtlasRb::Delegate.find("d-555")
-    def self.find(id)
-      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id)&.body))["delegate"]
+    def self.find(id, nuid: nil)
+      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get(ROUTE + id)&.body))["delegate"]
     end
   end
 end
