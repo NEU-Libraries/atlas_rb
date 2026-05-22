@@ -17,14 +17,17 @@ module AtlasRb
     # Fetch a single Community by ID.
     #
     # @param id [String] the Community ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the `"community"` object from the JSON response,
     #   already unwrapped.
     #
     # @example
     #   AtlasRb::Community.find("c-123")
     #   # => { "id" => "c-123", "title" => "College of Engineering", ... }
-    def self.find(id)
-      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id)&.body))["community"]
+    def self.find(id, nuid: nil)
+      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get(ROUTE + id)&.body))["community"]
     end
 
     # Create a new Community, optionally seeded with MODS metadata.
@@ -37,6 +40,9 @@ module AtlasRb
     # @param xml_path [String, nil] optional path to a MODS XML file. When
     #   given, the Community is created and immediately patched with the
     #   metadata in the file; the returned Hash reflects the patched state.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the created Community payload (post-update if `xml_path`
     #   was supplied).
     #
@@ -45,8 +51,8 @@ module AtlasRb
     #
     # @example Sub-community seeded from MODS
     #   AtlasRb::Community.create("c-parent", "/tmp/dept-mods.xml")
-    def self.create(id = nil, xml_path = nil)
-      result = AtlasRb::Mash.new(JSON.parse(connection({ parent_id: id }).post(ROUTE)&.body))["community"]
+    def self.create(id = nil, xml_path = nil, nuid: nil)
+      result = AtlasRb::Mash.new(JSON.parse(connection({ parent_id: id }, nuid).post(ROUTE)&.body))["community"]
       return result unless xml_path.present?
 
       update(result["id"], xml_path)
@@ -140,12 +146,15 @@ module AtlasRb
     # @param id [String] the Community ID.
     # @param values [Hash] field-level metadata updates (shape determined by
     #   the Atlas server, typically a mapping from MODS field name to value).
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the parsed JSON response.
     #
     # @example
     #   AtlasRb::Community.metadata("c-123", title: "New Name")
-    def self.metadata(id, values)
-      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body))
+    def self.metadata(id, values, nuid: nil)
+      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }, nuid).patch(ROUTE + id)&.body))
     end
 
     # Attach the three thumbnail/preview Delegate URIs to a Community.
@@ -159,6 +168,9 @@ module AtlasRb
     # @param thumbnail [String, nil] IIIF URI for the ~85² thumbnail.
     # @param thumbnail_2x [String, nil] IIIF URI for the ~170² 2x thumbnail.
     # @param preview [String, nil] IIIF URI for the ~500w preview image.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [AtlasRb::Mash] the parsed JSON response.
     #
     # @example
@@ -168,10 +180,10 @@ module AtlasRb
     #     thumbnail_2x: "https://iiif.example.edu/iiif/3/m.jp2/full/!170,170/0/default.jpg",
     #     preview:      "https://iiif.example.edu/iiif/3/m.jp2/full/500,/0/default.jpg"
     #   )
-    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil)
+    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil)
       body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
       AtlasRb::Mash.new(JSON.parse(
-        connection({}).patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
+        connection({}, nuid).patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
       ))
     end
 
@@ -181,14 +193,17 @@ module AtlasRb
     # @param kind [String, nil] one of `"json"` (default when omitted),
     #   `"html"`, or `"xml"`. When `nil`, Atlas returns its default
     #   representation.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [String] the raw response body (JSON, HTML, or XML serialized
     #   as a string).
     #
     # @example HTML rendering for display
     #   AtlasRb::Community.mods("c-123", "html")
-    def self.mods(id, kind = nil)
+    def self.mods(id, kind = nil, nuid: nil)
       # json default, html, xml
-      connection({}).get(
+      connection({}, nuid).get(
         ROUTE + id + '/mods' + (kind.present? ? ".#{kind}" : '')
         )&.body
     end
