@@ -79,12 +79,17 @@ module AtlasRb
 
     # Reset the connected Atlas instance to a clean state.
     #
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it. Atlas's `MaintenanceController#reset`
+    #   runs through the standard `require_auth` filter, so under Atlas
+    #   0.6.12+ the header is needed for any cerberus-token caller.
     # @return [String, nil] the raw response body from `GET /reset`.
     #
     # @example
-    #   AtlasRb::Reset.clean
-    def self.clean
-      connection({}).get("/reset")&.body
+    #   AtlasRb::Reset.clean(nuid: "000000000")
+    def self.clean(nuid: nil)
+      connection({}, nuid).get("/reset")&.body
     end
   end
 end
