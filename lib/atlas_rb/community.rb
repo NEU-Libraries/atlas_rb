@@ -62,12 +62,15 @@ module AtlasRb
     # Delete a Community.
     #
     # @param id [String] the Community ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Faraday::Response] the raw delete response.
     #
     # @example
     #   AtlasRb::Community.destroy("c-123")
-    def self.destroy(id)
-      connection({}).delete(ROUTE + id)
+    def self.destroy(id, nuid: nil)
+      connection({}, nuid).delete(ROUTE + id)
     end
 
     # Tombstone (withdraw) a Community.
@@ -112,13 +115,16 @@ module AtlasRb
     # needed.
     #
     # @param id [String] the parent Community ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Array<String>] child noids from `GET /communities/<id>/children`.
     #
     # @example
     #   AtlasRb::Community.children("c-123")
     #   # => ["fn106x926", "kw52j804p"]
-    def self.children(id)
-      JSON.parse(connection({}).get(ROUTE + id + '/children')&.body)
+    def self.children(id, nuid: nil)
+      JSON.parse(connection({}, nuid).get(ROUTE + id + '/children')&.body)
     end
 
     # Replace a Community's metadata by uploading a MODS XML document.
