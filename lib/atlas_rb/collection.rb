@@ -51,8 +51,8 @@ module AtlasRb
       result = AtlasRb::Mash.new(JSON.parse(connection({ parent_id: id }, nuid).post(ROUTE)&.body))["collection"]
       return result unless xml_path.present?
 
-      update(result["id"], xml_path)
-      find(result["id"])
+      update(result["id"], xml_path, nuid: nuid)
+      find(result["id"], nuid: nuid)
     end
 
     # Delete a Collection.
