@@ -26,6 +26,9 @@ module AtlasRb
     # pair so callers can dispatch on type.
     #
     # @param id [String] an Atlas resource ID of any type.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash{String => String, Hash}] hash with two keys:
     #   - `"klass"` — the resource type, capitalized (e.g. `"Work"`).
     #   - `"resource"` — the resource payload as a Hash.
@@ -33,8 +36,8 @@ module AtlasRb
     # @example Polymorphic lookup
     #   AtlasRb::Resource.find("abc123")
     #   # => { "klass" => "Work", "resource" => { "id" => "abc123", "title" => "..." } }
-    def self.find(id)
-      result = JSON.parse(connection({}).get('/resources/' + id)&.body)
+    def self.find(id, nuid: nil)
+      result = JSON.parse(connection({}, nuid).get('/resources/' + id)&.body)
       AtlasRb::Mash.new("klass" => result.first[0].capitalize,
                         "resource" => result.first[1])
     end
@@ -44,29 +47,35 @@ module AtlasRb
     # Useful for surfacing validation errors in UIs before the user commits.
     #
     # @param xml_path [String] path to a MODS XML file on disk.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [String] the raw response body from `POST /resources/preview`
     #   — typically a JSON or XML error report.
     #
     # @example
     #   AtlasRb::Resource.preview("/tmp/draft-mods.xml")
-    def self.preview(xml_path)
+    def self.preview(xml_path, nuid: nil)
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      multipart({}).post('/resources/preview', payload)&.body
+      multipart(nuid).post('/resources/preview', payload)&.body
     end
 
     # Fetch the access-control entries for a resource.
     #
     # @param id [String] an Atlas resource ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the `"resource"` payload from `GET /resources/<id>/permissions`,
     #   typically containing read/write/admin grant lists.
     #
     # @example
     #   AtlasRb::Resource.permissions("abc123")
     #   # => { "id" => "abc123", "read" => [...], "write" => [...] }
-    def self.permissions(id)
-      AtlasRb::Mash.new(JSON.parse(connection({}).get('/resources/' + id + '/permissions')&.body))["resource"]
+    def self.permissions(id, nuid: nil)
+      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get('/resources/' + id + '/permissions')&.body))["resource"]
     end
   end
 end
