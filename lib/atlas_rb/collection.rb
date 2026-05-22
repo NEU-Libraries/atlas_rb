@@ -120,15 +120,18 @@ module AtlasRb
     #
     # @param id [String] the Collection ID.
     # @param xml_path [String] path to a MODS XML file on disk.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the parsed JSON response from the patch.
     #
     # @example
     #   AtlasRb::Collection.update("col-456", "/tmp/collection-mods.xml")
-    def self.update(id, xml_path)
+    def self.update(id, xml_path, nuid: nil)
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      AtlasRb::Mash.new(JSON.parse(multipart({}).patch(ROUTE + id, payload)&.body))
+      AtlasRb::Mash.new(JSON.parse(multipart(nuid).patch(ROUTE + id, payload)&.body))
     end
 
     # Patch individual descriptive-metadata fields without uploading a
