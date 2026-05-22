@@ -58,12 +58,15 @@ module AtlasRb
     # Delete a Collection.
     #
     # @param id [String] the Collection ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Faraday::Response] the raw delete response.
     #
     # @example
     #   AtlasRb::Collection.destroy("col-456")
-    def self.destroy(id)
-      connection({}).delete(ROUTE + id)
+    def self.destroy(id, nuid: nil)
+      connection({}, nuid).delete(ROUTE + id)
     end
 
     # Tombstone (withdraw) a Collection.
@@ -107,13 +110,16 @@ module AtlasRb
     # {Resource.find} (or {Work.find}) when a full payload is needed.
     #
     # @param id [String] the Collection ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Array<String>] child noids from `GET /collections/<id>/children`.
     #
     # @example
     #   AtlasRb::Collection.children("col-456")
     #   # => ["w-789", "w-790"]
-    def self.children(id)
-      JSON.parse(connection({}).get(ROUTE + id + '/children')&.body)
+    def self.children(id, nuid: nil)
+      JSON.parse(connection({}, nuid).get(ROUTE + id + '/children')&.body)
     end
 
     # Replace a Collection's metadata by uploading a MODS XML document.
