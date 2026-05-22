@@ -16,14 +16,17 @@ module AtlasRb
     # Fetch a single Work by ID.
     #
     # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the `"work"` object, already unwrapped from the JSON
     #   response.
     #
     # @example
     #   AtlasRb::Work.find("w-789")
     #   # => { "id" => "w-789", "title" => "An Article", ... }
-    def self.find(id)
-      AtlasRb::Mash.new(JSON.parse(connection({}).get(ROUTE + id)&.body))["work"]
+    def self.find(id, nuid: nil)
+      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get(ROUTE + id)&.body))["work"]
     end
 
     # List Works, paginated.
@@ -71,6 +74,9 @@ module AtlasRb
     #   follow-up PATCH/GET when `xml_path` is given do not carry the key.
     #   The caller (e.g. Cerberus's Solid Queue job) generates and persists
     #   the UUID; this gem does not mint keys.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the created Work payload (post-update if `xml_path` was
     #   supplied).
     #
@@ -83,9 +89,9 @@ module AtlasRb
     # @example Retry-safe bulk-deposit create
     #   key = SecureRandom.uuid
     #   AtlasRb::Work.create("col-456", idempotency_key: key)
-    def self.create(id, xml_path = nil, idempotency_key: nil)
+    def self.create(id, xml_path = nil, idempotency_key: nil, nuid: nil)
       result = AtlasRb::Mash.new(JSON.parse(
-        connection({ collection_id: id }, nil, idempotency_key: idempotency_key).post(ROUTE)&.body
+        connection({ collection_id: id }, nuid, idempotency_key: idempotency_key).post(ROUTE)&.body
       ))["work"]
       return result unless xml_path.present?
 
@@ -187,12 +193,15 @@ module AtlasRb
     #
     # @param id [String] the Work ID.
     # @param values [Hash] field-level metadata updates.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Hash] the parsed JSON response.
     #
     # @example
     #   AtlasRb::Work.metadata("w-789", title: "Revised Title")
-    def self.metadata(id, values)
-      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }).patch(ROUTE + id)&.body))
+    def self.metadata(id, values, nuid: nil)
+      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }, nuid).patch(ROUTE + id)&.body))
     end
 
     # Attach the three thumbnail/preview Delegate URIs to a Work.
@@ -208,6 +217,9 @@ module AtlasRb
     # @param thumbnail [String, nil] IIIF URI for the ~85² thumbnail.
     # @param thumbnail_2x [String, nil] IIIF URI for the ~170² 2x thumbnail.
     # @param preview [String, nil] IIIF URI for the ~500w preview image.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [AtlasRb::Mash] the parsed JSON response.
     #
     # @example
@@ -217,10 +229,10 @@ module AtlasRb
     #     thumbnail_2x: "https://iiif.example.edu/iiif/3/abc.jp2/full/!170,170/0/default.jpg",
     #     preview:      "https://iiif.example.edu/iiif/3/abc.jp2/full/500,/0/default.jpg"
     #   )
-    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil)
+    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil)
       body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
       AtlasRb::Mash.new(JSON.parse(
-        connection({}).patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
+        connection({}, nuid).patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
       ))
     end
 
@@ -237,6 +249,9 @@ module AtlasRb
     # @param small [String, nil] IIIF URI for the small derivative.
     # @param medium [String, nil] IIIF URI for the medium derivative.
     # @param large [String, nil] IIIF URI for the large derivative.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [AtlasRb::Mash] the parsed JSON response.
     #
     # @example
@@ -246,10 +261,10 @@ module AtlasRb
     #     medium: "https://iiif.example.edu/iiif/3/abc.jp2/full/1600,/0/default.jpg",
     #     large:  "https://iiif.example.edu/iiif/3/abc.jp2/full/full/0/default.jpg"
     #   )
-    def self.set_image_derivatives(id, small: nil, medium: nil, large: nil)
+    def self.set_image_derivatives(id, small: nil, medium: nil, large: nil, nuid: nil)
       body = { small: small, medium: medium, large: large }.compact
       AtlasRb::Mash.new(JSON.parse(
-        connection({}).patch(ROUTE + id + '/image_derivatives', JSON.dump(body))&.body
+        connection({}, nuid).patch(ROUTE + id + '/image_derivatives', JSON.dump(body))&.body
       ))
     end
 
@@ -263,13 +278,16 @@ module AtlasRb
     # schema.
     #
     # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [Array<AtlasRb::Mash>] the listing from `GET /works/<id>/assets`,
     #   one entry per attached asset.
     #
     # @example
     #   AtlasRb::Work.assets("w-789").each { |a| puts a.label }
-    def self.assets(id)
-      JSON.parse(connection({}).get(ROUTE + id + '/assets')&.body).map { |entry| AtlasRb::Mash.new(entry) }
+    def self.assets(id, nuid: nil)
+      JSON.parse(connection({}, nuid).get(ROUTE + id + '/assets')&.body).map { |entry| AtlasRb::Mash.new(entry) }
     end
 
     # Fetch the Work's MODS representation in the requested format.
@@ -277,13 +295,16 @@ module AtlasRb
     # @param id [String] the Work ID.
     # @param kind [String, nil] one of `"json"` (default), `"html"`, or
     #   `"xml"`.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
     # @return [String] the raw response body in the requested format.
     #
     # @example
     #   AtlasRb::Work.mods("w-789", "html")
-    def self.mods(id, kind = nil)
+    def self.mods(id, kind = nil, nuid: nil)
       # json default, html, xml
-      connection({}).get(
+      connection({}, nuid).get(
         ROUTE + id + '/mods' + (kind.present? ? ".#{kind}" : '')
         )&.body
     end
