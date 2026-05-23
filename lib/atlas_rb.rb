@@ -15,6 +15,10 @@ require_relative "atlas_rb/work"
 require_relative "atlas_rb/file_set"
 require_relative "atlas_rb/blob"
 require_relative "atlas_rb/delegate"
+require_relative "atlas_rb/admin"
+require_relative "atlas_rb/admin/work"
+require_relative "atlas_rb/admin/collection"
+require_relative "atlas_rb/admin/community"
 require_relative "atlas_rb/system/user"
 
 # Ruby client for the Atlas API — Northeastern University's institutional

@@ -65,20 +65,6 @@ module AtlasRb
       find(result["id"], nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
-    # Delete a Collection.
-    #
-    # @param id [String] the Collection ID.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
-    # @return [Faraday::Response] the raw delete response.
-    #
-    # @example
-    #   AtlasRb::Collection.destroy("col-456")
-    def self.destroy(id, nuid: nil)
-      connection({}, nuid).delete(ROUTE + id)
-    end
-
     # Tombstone (withdraw) a Collection.
     #
     # The Collection remains in Atlas storage but is marked as withdrawn:
@@ -97,24 +83,8 @@ module AtlasRb
     #
     # @example
     #   AtlasRb::Collection.tombstone("col-456", nuid: "000000002")
-    def self.tombstone(id, nuid:, on_behalf_of: nil)
+    def self.tombstone(id, nuid: nil, on_behalf_of: nil)
       connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/tombstone')
-    end
-
-    # Restore a previously tombstoned Collection.
-    #
-    # **Operator-only.** Restoration is intentionally not exposed in any
-    # end-user UI; call this from a Rails console session (or a future
-    # admin panel) when the library has decided an object should come back.
-    #
-    # @param id [String] the Collection ID.
-    # @param nuid [String] the acting user's NUID.
-    # @return [Faraday::Response] the raw response.
-    #
-    # @example Operator restoring from `bundle exec rails console`
-    #   AtlasRb::Collection.restore("col-456", nuid: "000000002")
-    def self.restore(id, nuid:)
-      connection({}, nuid).post(ROUTE + id + '/restore')
     end
 
     # List the Works in a Collection.

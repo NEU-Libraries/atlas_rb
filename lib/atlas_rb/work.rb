@@ -116,20 +116,6 @@ module AtlasRb
       find(result["id"], nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
-    # Delete a Work.
-    #
-    # @param id [String] the Work ID.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
-    # @return [Faraday::Response] the raw delete response.
-    #
-    # @example
-    #   AtlasRb::Work.destroy("w-789")
-    def self.destroy(id, nuid: nil)
-      connection({}, nuid).delete(ROUTE + id)
-    end
-
     # Tombstone (withdraw) a Work.
     #
     # The Work remains in Atlas storage along with its FileSets and Blobs,
@@ -148,7 +134,7 @@ module AtlasRb
     #
     # @example
     #   AtlasRb::Work.tombstone("w-789", nuid: "000000002")
-    def self.tombstone(id, nuid:, on_behalf_of: nil)
+    def self.tombstone(id, nuid: nil, on_behalf_of: nil)
       connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/tombstone')
     end
 
@@ -176,22 +162,6 @@ module AtlasRb
     #   AtlasRb::Work.complete("w-789")
     def self.complete(id, nuid: nil, on_behalf_of: nil)
       connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/complete')
-    end
-
-    # Restore a previously tombstoned Work.
-    #
-    # **Operator-only.** Restoration is intentionally not exposed in any
-    # end-user UI; call this from a Rails console session (or a future
-    # admin panel) when the library has decided an object should come back.
-    #
-    # @param id [String] the Work ID.
-    # @param nuid [String] the acting user's NUID.
-    # @return [Faraday::Response] the raw response.
-    #
-    # @example Operator restoring from `bundle exec rails console`
-    #   AtlasRb::Work.restore("w-789", nuid: "000000002")
-    def self.restore(id, nuid:)
-      connection({}, nuid).post(ROUTE + id + '/restore')
     end
 
     # Replace a Work's metadata by uploading a MODS XML document.
