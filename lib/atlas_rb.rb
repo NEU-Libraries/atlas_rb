@@ -4,6 +4,7 @@ require "faraday"
 require "faraday/multipart"
 require "faraday/follow_redirects"
 require_relative "atlas_rb/version"
+require_relative "atlas_rb/configuration"
 require_relative "atlas_rb/faraday_helper"
 require_relative "atlas_rb/mash"
 require_relative "atlas_rb/authentication"
@@ -68,6 +69,34 @@ module AtlasRb
   # resource class. Atlas errors today surface as raw `Faraday::Response`
   # objects or `JSON::ParserError`s on malformed bodies.
   class Error < StandardError; end
+
+  # The gem-wide configuration instance. Lazily initialized — host
+  # applications register defaults via {AtlasRb.configure}.
+  #
+  # @return [AtlasRb::Configuration] the singleton configuration.
+  def self.config
+    @config ||= Configuration.new
+  end
+
+  # Yield the configuration for registration.
+  #
+  # When `default_nuid` or `default_on_behalf_of` are set, resource methods
+  # that take `nuid:` / `on_behalf_of:` kwargs will fall through to the
+  # registered callables whenever the caller omits the kwarg (or passes
+  # `nil`). Caller-passed values always win.
+  #
+  # @yieldparam config [AtlasRb::Configuration] the configuration to mutate.
+  # @return [AtlasRb::Configuration] the configured instance.
+  #
+  # @example Registering an ambient NUID source in a Rails initializer
+  #   AtlasRb.configure do |config|
+  #     config.default_nuid         = -> { Current.nuid }
+  #     config.default_on_behalf_of = -> { Current.on_behalf_of }
+  #   end
+  def self.configure
+    yield config
+    config
+  end
 
   # Test-environment helper that wipes Atlas state via `GET /reset`.
   #

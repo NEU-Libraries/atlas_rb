@@ -8,10 +8,13 @@ module AtlasRb
   # - `ATLAS_URL`   — base URL of the Atlas API (e.g. `https://atlas.example.edu`).
   # - `ATLAS_TOKEN` — bearer token used in the `Authorization` header.
   #
-  # Most calls also identify the acting user via a `User: NUID <nuid>` header.
-  # Resource classes typically pass `nuid = nil` (anonymous / system context);
-  # {AtlasRb::Authentication} is the only place where a real NUID is currently
-  # threaded through.
+  # Most calls also identify the acting user via a `User: NUID <nuid>` header,
+  # and optionally an `On-Behalf-Of: NUID <nuid>` header for acting-as / view-as
+  # flows. When `nuid` / `on_behalf_of` are omitted (positional arg `nil`,
+  # kwarg `nil`), the helper falls through to {AtlasRb.config}'s
+  # `default_nuid` / `default_on_behalf_of` callables — host applications wire
+  # those up to their request-scoped `Current.*` source. Caller-passed values
+  # always win over the configured defaults.
   #
   # The module is mixed in via `extend`, so its methods become class methods on
   # the host (e.g. `AtlasRb::Work.connection({})`).
@@ -22,7 +25,13 @@ module AtlasRb
     #   Resource classes use this to pass things like `parent_id:`, `work_id:`,
     #   or `metadata:` without manually serializing.
     # @param nuid [String, nil] optional Northeastern University ID to send in
-    #   the `User` header. Defaults to `nil` (no NUID context).
+    #   the `User` header. When `nil`, falls through to
+    #   `AtlasRb.config.default_nuid&.call`; if that is also nil, no `User:`
+    #   header is sent (legacy bearer-only path).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. When `nil`, falls through to
+    #   `AtlasRb.config.default_on_behalf_of&.call`; if that is also nil, no
+    #   `On-Behalf-Of:` header is sent. Used by acting-as / view-as flows.
     # @param idempotency_key [String, nil] optional UUID to send in the
     #   `Idempotency-Key` header. Used by retry-safe create flows (currently
     #   `POST /works`, `POST /file_sets`, `POST /files`) to deduplicate replays
@@ -33,12 +42,16 @@ module AtlasRb
     #
     # @example Fetching a community
     #   AtlasRb::Community.connection({}).get('/communities/abc123')
-    def connection(params, nuid=nil, idempotency_key: nil)
+    def connection(params, nuid=nil, on_behalf_of: nil, idempotency_key: nil)
+      nuid         ||= AtlasRb.config.default_nuid&.call
+      on_behalf_of ||= AtlasRb.config.default_on_behalf_of&.call
+
       headers = {
         "Content-Type" => "application/json",
         "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}"
       }
-      headers["User"] = "NUID #{nuid}" if nuid
+      headers["User"]            = "NUID #{nuid}" if nuid
+      headers["On-Behalf-Of"]    = "NUID #{on_behalf_of}" if on_behalf_of
       headers["Idempotency-Key"] = idempotency_key if idempotency_key
 
       Faraday.new(
@@ -56,9 +69,12 @@ module AtlasRb
     # The same `ATLAS_URL` / `ATLAS_TOKEN` env vars apply. Unlike {#connection},
     # the `Content-Type` is set automatically by the multipart middleware, and
     # callers pass a payload hash whose values may include
-    # `Faraday::Multipart::FilePart` instances.
+    # `Faraday::Multipart::FilePart` instances. Fall-through semantics for
+    # `nuid` / `on_behalf_of` match {#connection}.
     #
     # @param nuid [String, nil] optional NUID for the `User` header.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header.
     # @param idempotency_key [String, nil] optional UUID to send in the
     #   `Idempotency-Key` header. See {#connection} for semantics; the
     #   `POST /files` (Blob) create flow uses this transport.
@@ -71,12 +87,16 @@ module AtlasRb
     #                                               "application/octet-stream",
     #                                               "scan.pdf")
     #   }
-    #   AtlasRb::Blob.multipart({}).post('/files/', payload)
-    def multipart(nuid=nil, idempotency_key: nil)
+    #   AtlasRb::Blob.multipart.post('/files/', payload)
+    def multipart(nuid=nil, on_behalf_of: nil, idempotency_key: nil)
+      nuid         ||= AtlasRb.config.default_nuid&.call
+      on_behalf_of ||= AtlasRb.config.default_on_behalf_of&.call
+
       headers = {
         "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}"
       }
-      headers["User"] = "NUID #{nuid}" if nuid
+      headers["User"]            = "NUID #{nuid}" if nuid
+      headers["On-Behalf-Of"]    = "NUID #{on_behalf_of}" if on_behalf_of
       headers["Idempotency-Key"] = idempotency_key if idempotency_key
 
       Faraday.new(
