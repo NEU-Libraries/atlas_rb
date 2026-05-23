@@ -107,5 +107,44 @@ module AtlasRb
         f.request :url_encoded
       end
     end
+
+    # Build a Faraday connection authenticated as the Atlas `:system`
+    # fixture for system-context calls (SSO user provisioning, etc.).
+    #
+    # **Distinct from {#connection}.** The bearer token comes from
+    # `Rails.application.credentials.atlas_system_token` (NOT `ENV` — the
+    # source report's leak-halving argument: a `.env` leak shouldn't
+    # expose the system token alongside the user token). The `User:`
+    # header is hard-pinned to {AtlasRb::System::NUID} so this path
+    # always identifies as the Atlas system principal. The configurable
+    # `default_nuid` / `default_on_behalf_of` are **never** consulted —
+    # there is no ambient user context on this path.
+    #
+    # Used exclusively by classes under {AtlasRb::System}.
+    #
+    # @param params [Hash] query-string / body params.
+    # @return [Faraday::Connection] a system-authenticated connection.
+    # @raise [RuntimeError] if the credential is not configured.
+    # @raise [NameError] if `Rails` is not loaded (the gem assumes a
+    #   Rails host for system-path calls).
+    def system_connection(params = {})
+      token = Rails.application.credentials.atlas_system_token ||
+              raise("atlas_rb: Rails.application.credentials.atlas_system_token not configured")
+
+      headers = {
+        "Content-Type"  => "application/json",
+        "Authorization" => "Bearer #{token}",
+        "User"          => "NUID #{AtlasRb::System::NUID}"
+      }
+
+      Faraday.new(
+        url: ENV.fetch("ATLAS_URL", nil),
+        params: params,
+        headers: headers
+      ) do |f|
+        f.response :follow_redirects
+        f.adapter Faraday.default_adapter
+      end
+    end
   end
 end
