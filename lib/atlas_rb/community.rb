@@ -20,14 +20,19 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the `"community"` object from the JSON response,
     #   already unwrapped.
     #
     # @example
     #   AtlasRb::Community.find("c-123")
     #   # => { "id" => "c-123", "title" => "College of Engineering", ... }
-    def self.find(id, nuid: nil)
-      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get(ROUTE + id)&.body))["community"]
+    def self.find(id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
+      ))["community"]
     end
 
     # Create a new Community, optionally seeded with MODS metadata.
@@ -43,6 +48,9 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the created Community payload (post-update if `xml_path`
     #   was supplied).
     #
@@ -51,12 +59,14 @@ module AtlasRb
     #
     # @example Sub-community seeded from MODS
     #   AtlasRb::Community.create("c-parent", "/tmp/dept-mods.xml")
-    def self.create(id = nil, xml_path = nil, nuid: nil)
-      result = AtlasRb::Mash.new(JSON.parse(connection({ parent_id: id }, nuid).post(ROUTE)&.body))["community"]
+    def self.create(id = nil, xml_path = nil, nuid: nil, on_behalf_of: nil)
+      result = AtlasRb::Mash.new(JSON.parse(
+        connection({ parent_id: id }, nuid, on_behalf_of: on_behalf_of).post(ROUTE)&.body
+      ))["community"]
       return result unless xml_path.present?
 
-      update(result["id"], xml_path, nuid: nuid)
-      find(result["id"], nuid: nuid)
+      update(result["id"], xml_path, nuid: nuid, on_behalf_of: on_behalf_of)
+      find(result["id"], nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # Delete a Community.
@@ -83,13 +93,16 @@ module AtlasRb
     # @param id [String] the Community ID.
     # @param nuid [String] the acting user's NUID, stamped on the resource
     #   as `tombstoned_by` for audit purposes.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Faraday::Response] the raw response. `200`/`204` on success;
     #   `422` with `{"code":"has_live_children"}` if the Community is not empty.
     #
     # @example
     #   AtlasRb::Community.tombstone("c-123", nuid: "000000002")
-    def self.tombstone(id, nuid:)
-      connection({}, nuid).post(ROUTE + id + '/tombstone')
+    def self.tombstone(id, nuid:, on_behalf_of: nil)
+      connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/tombstone')
     end
 
     # Restore a previously tombstoned Community.
@@ -118,13 +131,18 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Array<String>] child noids from `GET /communities/<id>/children`.
     #
     # @example
     #   AtlasRb::Community.children("c-123")
     #   # => ["fn106x926", "kw52j804p"]
-    def self.children(id, nuid: nil)
-      JSON.parse(connection({}, nuid).get(ROUTE + id + '/children')&.body)
+    def self.children(id, nuid: nil, on_behalf_of: nil)
+      JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/children')&.body
+      )
     end
 
     # Replace a Community's metadata by uploading a MODS XML document.
@@ -134,15 +152,20 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the parsed JSON response from the patch.
     #
     # @example
     #   AtlasRb::Community.update("c-123", "/tmp/community-mods.xml")
-    def self.update(id, xml_path, nuid: nil)
+    def self.update(id, xml_path, nuid: nil, on_behalf_of: nil)
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      AtlasRb::Mash.new(JSON.parse(multipart(nuid).patch(ROUTE + id, payload)&.body))
+      AtlasRb::Mash.new(JSON.parse(
+        multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)&.body
+      ))
     end
 
     # Patch individual descriptive-metadata fields without uploading a
@@ -158,12 +181,17 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the parsed JSON response.
     #
     # @example
     #   AtlasRb::Community.metadata("c-123", title: "New Name")
-    def self.metadata(id, values, nuid: nil)
-      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }, nuid).patch(ROUTE + id)&.body))
+    def self.metadata(id, values, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({ metadata: values }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)&.body
+      ))
     end
 
     # Attach the three thumbnail/preview Delegate URIs to a Community.
@@ -189,10 +217,11 @@ module AtlasRb
     #     thumbnail_2x: "https://iiif.example.edu/iiif/3/m.jp2/full/!170,170/0/default.jpg",
     #     preview:      "https://iiif.example.edu/iiif/3/m.jp2/full/500,/0/default.jpg"
     #   )
-    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil)
+    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil, on_behalf_of: nil)
       body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
       AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid).patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
       ))
     end
 
@@ -205,14 +234,17 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [String] the raw response body (JSON, HTML, or XML serialized
     #   as a string).
     #
     # @example HTML rendering for display
     #   AtlasRb::Community.mods("c-123", "html")
-    def self.mods(id, kind = nil, nuid: nil)
+    def self.mods(id, kind = nil, nuid: nil, on_behalf_of: nil)
       # json default, html, xml
-      connection({}, nuid).get(
+      connection({}, nuid, on_behalf_of: on_behalf_of).get(
         ROUTE + id + '/mods' + (kind.present? ? ".#{kind}" : '')
         )&.body
     end

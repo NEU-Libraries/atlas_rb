@@ -20,12 +20,17 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the `"file_set"` object, already unwrapped.
     #
     # @example
     #   AtlasRb::FileSet.find("fs-001")
-    def self.find(id, nuid: nil)
-      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get(ROUTE + id)&.body))["file_set"]
+    def self.find(id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
+      ))["file_set"]
     end
 
     # Create a new FileSet under a Work.
@@ -40,6 +45,9 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the created `"file_set"` payload, including its `"id"`
     #   which can then be passed to {.update} to attach a binary.
     #
@@ -50,10 +58,10 @@ module AtlasRb
     # @example Retry-safe bulk-deposit create
     #   key = SecureRandom.uuid
     #   AtlasRb::FileSet.create("w-789", "primary", idempotency_key: key)
-    def self.create(id, classification, idempotency_key: nil, nuid: nil)
+    def self.create(id, classification, idempotency_key: nil, nuid: nil, on_behalf_of: nil)
       AtlasRb::Mash.new(JSON.parse(
         connection({ work_id: id, classification: classification }, nuid,
-                   idempotency_key: idempotency_key).post(ROUTE)&.body
+                   on_behalf_of: on_behalf_of, idempotency_key: idempotency_key).post(ROUTE)&.body
       ))["file_set"]
     end
 
@@ -63,12 +71,15 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Faraday::Response] the raw delete response.
     #
     # @example
     #   AtlasRb::FileSet.destroy("fs-001")
-    def self.destroy(id, nuid: nil)
-      connection({}, nuid).delete(ROUTE + id)
+    def self.destroy(id, nuid: nil, on_behalf_of: nil)
+      connection({}, nuid, on_behalf_of: on_behalf_of).delete(ROUTE + id)
     end
 
     # Attach (or replace) the binary content backing this FileSet.
@@ -83,16 +94,21 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the parsed JSON response from the patch.
     #
     # @example
     #   AtlasRb::FileSet.update("fs-001", "/tmp/article.pdf")
-    def self.update(id, blob_path, nuid: nil)
+    def self.update(id, blob_path, nuid: nil, on_behalf_of: nil)
       # Need to figure out blob vs XML
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
                                                           "application/octet-stream",
                                                           File.basename(blob_path)) }
-      AtlasRb::Mash.new(JSON.parse(multipart(nuid).patch(ROUTE + id, payload)&.body))
+      AtlasRb::Mash.new(JSON.parse(
+        multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)&.body
+      ))
     end
   end
 end

@@ -20,14 +20,19 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the `"blob"` object, already unwrapped — typically
     #   includes `"id"`, `"original_filename"`, `"size"`, and a download URL.
     #
     # @example
     #   AtlasRb::Blob.find("b-321")
     #   # => { "id" => "b-321", "original_filename" => "scan.pdf", ... }
-    def self.find(id, nuid: nil)
-      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get(ROUTE + id)&.body))['blob']
+    def self.find(id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
+      ))['blob']
     end
 
     # Stream the Blob's binary content through a caller-supplied block.
@@ -41,6 +46,9 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @yieldparam chunk [String] the next chunk of binary data.
     # @return [Hash] the response headers from `GET /files/<id>/content`.
     #
@@ -49,9 +57,9 @@ module AtlasRb
     #     headers = AtlasRb::Blob.content("b-321") { |chunk| f.write(chunk) }
     #     puts headers["content-type"]
     #   end
-    def self.content(id, nuid: nil, &chunk_handler)
+    def self.content(id, nuid: nil, on_behalf_of: nil, &chunk_handler)
       headers = {}
-      connection({}, nuid).get("#{ROUTE}#{id}/content") do |req|
+      connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/content") do |req|
         req.options.on_data = proc do |chunk, _bytes_received, env|
           headers = env.response_headers if headers.empty? && env
           chunk_handler.call(chunk)
@@ -77,6 +85,9 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the created `"blob"` payload, including its `"id"`.
     #
     # @example
@@ -87,7 +98,7 @@ module AtlasRb
     #   key = SecureRandom.uuid
     #   AtlasRb::Blob.create("w-789", "/tmp/upload.tmp", "thesis.pdf",
     #                        idempotency_key: key)
-    def self.create(id, blob_path, original_filename, idempotency_key: nil, nuid: nil)
+    def self.create(id, blob_path, original_filename, idempotency_key: nil, nuid: nil, on_behalf_of: nil)
       payload = { work_id: id,
                   original_filename: original_filename,
                   binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
@@ -95,7 +106,8 @@ module AtlasRb
                                                           File.basename(blob_path)) }
 
       AtlasRb::Mash.new(JSON.parse(
-        multipart(nuid, idempotency_key: idempotency_key).post(ROUTE, payload)&.body
+        multipart(nuid, on_behalf_of: on_behalf_of, idempotency_key: idempotency_key)
+          .post(ROUTE, payload)&.body
       ))['blob']
     end
 
@@ -105,12 +117,15 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Faraday::Response] the raw delete response.
     #
     # @example
     #   AtlasRb::Blob.destroy("b-321")
-    def self.destroy(id, nuid: nil)
-      connection({}, nuid).delete(ROUTE + id)
+    def self.destroy(id, nuid: nil, on_behalf_of: nil)
+      connection({}, nuid, on_behalf_of: on_behalf_of).delete(ROUTE + id)
     end
 
     # Replace the bytes of an existing Blob in-place.
@@ -124,15 +139,20 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the parsed JSON response from the patch.
     #
     # @example
     #   AtlasRb::Blob.update("b-321", "/tmp/revised.pdf")
-    def self.update(id, blob_path, nuid: nil)
+    def self.update(id, blob_path, nuid: nil, on_behalf_of: nil)
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
                                                           "application/octet-stream",
                                                           File.basename(blob_path)) }
-      AtlasRb::Mash.new(JSON.parse(multipart(nuid).patch(ROUTE + id, payload)&.body))
+      AtlasRb::Mash.new(JSON.parse(
+        multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)&.body
+      ))
     end
   end
 end

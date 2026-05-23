@@ -113,12 +113,15 @@ module AtlasRb
     #   tokens still resolve without it. Atlas's `MaintenanceController#reset`
     #   runs through the standard `require_auth` filter, so under Atlas
     #   0.6.12+ the header is needed for any cerberus-token caller.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [String, nil] the raw response body from `GET /reset`.
     #
     # @example
     #   AtlasRb::Reset.clean(nuid: "000000000")
-    def self.clean(nuid: nil)
-      connection({}, nuid).get("/reset")&.body
+    def self.clean(nuid: nil, on_behalf_of: nil)
+      connection({}, nuid, on_behalf_of: on_behalf_of).get("/reset")&.body
     end
   end
 end

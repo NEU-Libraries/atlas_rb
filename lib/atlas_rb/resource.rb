@@ -29,6 +29,9 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash{String => String, Hash}] hash with two keys:
     #   - `"klass"` — the resource type, capitalized (e.g. `"Work"`).
     #   - `"resource"` — the resource payload as a Hash.
@@ -36,8 +39,10 @@ module AtlasRb
     # @example Polymorphic lookup
     #   AtlasRb::Resource.find("abc123")
     #   # => { "klass" => "Work", "resource" => { "id" => "abc123", "title" => "..." } }
-    def self.find(id, nuid: nil)
-      result = JSON.parse(connection({}, nuid).get('/resources/' + id)&.body)
+    def self.find(id, nuid: nil, on_behalf_of: nil)
+      result = JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get('/resources/' + id)&.body
+      )
       AtlasRb::Mash.new("klass" => result.first[0].capitalize,
                         "resource" => result.first[1])
     end
@@ -50,16 +55,19 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [String] the raw response body from `POST /resources/preview`
     #   — typically a JSON or XML error report.
     #
     # @example
     #   AtlasRb::Resource.preview("/tmp/draft-mods.xml")
-    def self.preview(xml_path, nuid: nil)
+    def self.preview(xml_path, nuid: nil, on_behalf_of: nil)
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      multipart(nuid).post('/resources/preview', payload)&.body
+      multipart(nuid, on_behalf_of: on_behalf_of).post('/resources/preview', payload)&.body
     end
 
     # Fetch the access-control entries for a resource.
@@ -68,14 +76,20 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the `"resource"` payload from `GET /resources/<id>/permissions`,
     #   typically containing read/write/admin grant lists.
     #
     # @example
     #   AtlasRb::Resource.permissions("abc123")
     #   # => { "id" => "abc123", "read" => [...], "write" => [...] }
-    def self.permissions(id, nuid: nil)
-      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get('/resources/' + id + '/permissions')&.body))["resource"]
+    def self.permissions(id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .get('/resources/' + id + '/permissions')&.body
+      ))["resource"]
     end
   end
 end

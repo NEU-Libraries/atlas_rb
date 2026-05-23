@@ -19,14 +19,19 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header (acting-as / view-as). Falls through to
+    #   {AtlasRb.config}.default_on_behalf_of when omitted.
     # @return [Hash] the `"work"` object, already unwrapped from the JSON
     #   response.
     #
     # @example
     #   AtlasRb::Work.find("w-789")
     #   # => { "id" => "w-789", "title" => "An Article", ... }
-    def self.find(id, nuid: nil)
-      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get(ROUTE + id)&.body))["work"]
+    def self.find(id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
+      ))["work"]
     end
 
     # List Works, paginated.
@@ -42,6 +47,9 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [AtlasRb::Mash] `{ "works" => [...], "pagination" => {...} }`.
     #   Each entry in `"works"` is a Work summary (`id`, `title`,
     #   `description`, `in_progress`).
@@ -51,12 +59,14 @@ module AtlasRb
     #
     # @example Page through all works
     #   AtlasRb::Work.list(page: 2, per_page: 50)
-    def self.list(in_progress: nil, page: nil, per_page: nil, nuid: nil)
+    def self.list(in_progress: nil, page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
       params = {}
       params[:in_progress] = in_progress unless in_progress.nil?
       params[:page]        = page        if page
       params[:per_page]    = per_page    if per_page
-      AtlasRb::Mash.new(JSON.parse(connection(params, nuid).get(ROUTE)&.body))
+      AtlasRb::Mash.new(JSON.parse(
+        connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE)&.body
+      ))
     end
 
     # Create a new Work in an existing Collection.
@@ -80,6 +90,9 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the created Work payload (post-update if `xml_path` was
     #   supplied).
     #
@@ -92,14 +105,15 @@ module AtlasRb
     # @example Retry-safe bulk-deposit create
     #   key = SecureRandom.uuid
     #   AtlasRb::Work.create("col-456", idempotency_key: key)
-    def self.create(id, xml_path = nil, idempotency_key: nil, nuid: nil)
+    def self.create(id, xml_path = nil, idempotency_key: nil, nuid: nil, on_behalf_of: nil)
       result = AtlasRb::Mash.new(JSON.parse(
-        connection({ collection_id: id }, nuid, idempotency_key: idempotency_key).post(ROUTE)&.body
+        connection({ collection_id: id }, nuid,
+                   on_behalf_of: on_behalf_of, idempotency_key: idempotency_key).post(ROUTE)&.body
       ))["work"]
       return result unless xml_path.present?
 
-      update(result["id"], xml_path, nuid: nuid)
-      find(result["id"], nuid: nuid)
+      update(result["id"], xml_path, nuid: nuid, on_behalf_of: on_behalf_of)
+      find(result["id"], nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # Delete a Work.
@@ -127,12 +141,15 @@ module AtlasRb
     # @param id [String] the Work ID.
     # @param nuid [String] the acting user's NUID, stamped on the resource
     #   as `tombstoned_by` for audit purposes.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Faraday::Response] the raw response.
     #
     # @example
     #   AtlasRb::Work.tombstone("w-789", nuid: "000000002")
-    def self.tombstone(id, nuid:)
-      connection({}, nuid).post(ROUTE + id + '/tombstone')
+    def self.tombstone(id, nuid:, on_behalf_of: nil)
+      connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/tombstone')
     end
 
     # Mark a Work complete.
@@ -150,12 +167,15 @@ module AtlasRb
     #
     # @param id [String] the Work ID.
     # @param nuid [String, nil] optional NUID of the acting user.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Faraday::Response] the raw response. Status `200` on success.
     #
     # @example
     #   AtlasRb::Work.complete("w-789")
-    def self.complete(id, nuid: nil)
-      connection({}, nuid).post(ROUTE + id + '/complete')
+    def self.complete(id, nuid: nil, on_behalf_of: nil)
+      connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/complete')
     end
 
     # Restore a previously tombstoned Work.
@@ -181,15 +201,20 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the parsed JSON response from the patch.
     #
     # @example
     #   AtlasRb::Work.update("w-789", "/tmp/work-mods.xml")
-    def self.update(id, xml_path, nuid: nil)
+    def self.update(id, xml_path, nuid: nil, on_behalf_of: nil)
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      AtlasRb::Mash.new(JSON.parse(multipart(nuid).patch(ROUTE + id, payload)&.body))
+      AtlasRb::Mash.new(JSON.parse(
+        multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)&.body
+      ))
     end
 
     # Patch individual descriptive-metadata fields without uploading a
@@ -205,12 +230,17 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Hash] the parsed JSON response.
     #
     # @example
     #   AtlasRb::Work.metadata("w-789", title: "Revised Title")
-    def self.metadata(id, values, nuid: nil)
-      AtlasRb::Mash.new(JSON.parse(connection({ metadata: values }, nuid).patch(ROUTE + id)&.body))
+    def self.metadata(id, values, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({ metadata: values }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)&.body
+      ))
     end
 
     # Attach the three thumbnail/preview Delegate URIs to a Work.
@@ -238,10 +268,11 @@ module AtlasRb
     #     thumbnail_2x: "https://iiif.example.edu/iiif/3/abc.jp2/full/!170,170/0/default.jpg",
     #     preview:      "https://iiif.example.edu/iiif/3/abc.jp2/full/500,/0/default.jpg"
     #   )
-    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil)
+    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil, on_behalf_of: nil)
       body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
       AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid).patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
       ))
     end
 
@@ -270,10 +301,11 @@ module AtlasRb
     #     medium: "https://iiif.example.edu/iiif/3/abc.jp2/full/1600,/0/default.jpg",
     #     large:  "https://iiif.example.edu/iiif/3/abc.jp2/full/full/0/default.jpg"
     #   )
-    def self.set_image_derivatives(id, small: nil, medium: nil, large: nil, nuid: nil)
+    def self.set_image_derivatives(id, small: nil, medium: nil, large: nil, nuid: nil, on_behalf_of: nil)
       body = { small: small, medium: medium, large: large }.compact
       AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid).patch(ROUTE + id + '/image_derivatives', JSON.dump(body))&.body
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .patch(ROUTE + id + '/image_derivatives', JSON.dump(body))&.body
       ))
     end
 
@@ -290,13 +322,18 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [Array<AtlasRb::Mash>] the listing from `GET /works/<id>/assets`,
     #   one entry per attached asset.
     #
     # @example
     #   AtlasRb::Work.assets("w-789").each { |a| puts a.label }
-    def self.assets(id, nuid: nil)
-      JSON.parse(connection({}, nuid).get(ROUTE + id + '/assets')&.body).map { |entry| AtlasRb::Mash.new(entry) }
+    def self.assets(id, nuid: nil, on_behalf_of: nil)
+      JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/assets')&.body
+      ).map { |entry| AtlasRb::Mash.new(entry) }
     end
 
     # Fetch the Work's MODS representation in the requested format.
@@ -307,13 +344,16 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
     # @return [String] the raw response body in the requested format.
     #
     # @example
     #   AtlasRb::Work.mods("w-789", "html")
-    def self.mods(id, kind = nil, nuid: nil)
+    def self.mods(id, kind = nil, nuid: nil, on_behalf_of: nil)
       # json default, html, xml
-      connection({}, nuid).get(
+      connection({}, nuid, on_behalf_of: on_behalf_of).get(
         ROUTE + id + '/mods' + (kind.present? ? ".#{kind}" : '')
         )&.body
     end
