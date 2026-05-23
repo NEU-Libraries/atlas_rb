@@ -23,21 +23,76 @@ Then `bundle install`, or install standalone with `gem install atlas_rb`.
 
 ## Configuration
 
-Every request reads two environment variables:
+### Environment variables
+
+Every regular-path request reads two environment variables:
 
 | Variable      | Purpose                                                       |
 |---------------|---------------------------------------------------------------|
 | `ATLAS_URL`   | Base URL of the Atlas API (e.g. `https://atlas.example.edu`). |
-| `ATLAS_TOKEN` | Bearer token used in the `Authorization` header.             |
-
-User-scoped calls (currently only `AtlasRb::Authentication`) additionally
-accept an NUID — the Northeastern University ID — which is forwarded in a
-`User: NUID <nuid>` header.
+| `ATLAS_TOKEN` | Bearer token used in the `Authorization` header.              |
 
 ```ruby
 ENV["ATLAS_URL"]   = "https://atlas.example.edu"
 ENV["ATLAS_TOKEN"] = "..."
 ```
+
+### Ambient identity (`default_nuid` / `default_on_behalf_of`)
+
+Every resource method that talks to Atlas accepts a `nuid:` kwarg (the
+acting user) and an `on_behalf_of:` kwarg (the user the call is being
+made *for*, used by acting-as / view-as flows). Both are forwarded as
+`User: NUID <nuid>` and `On-Behalf-Of: NUID <nuid>` headers
+respectively.
+
+Rather than threading them at every call site, register callables
+once on app boot and let the gem read them as defaults:
+
+```ruby
+# config/initializers/atlas_rb.rb (Rails)
+AtlasRb.configure do |config|
+  config.default_nuid         = -> { Current.nuid }
+  config.default_on_behalf_of = -> { Current.on_behalf_of }
+end
+```
+
+The lambdas run **at request time** in whatever thread / fiber is
+making the call, so they pick up per-request `Current.*` values that
+`ApplicationController` set up via Devise + Rails 7's
+`ActiveSupport::CurrentAttributes`. Background jobs work the same way
+(ActiveJob ↔ CurrentAttributes integration restores the values on
+`perform`).
+
+Caller-passed kwargs always win over the configured defaults:
+
+```ruby
+# Uses Current.nuid:
+AtlasRb::Work.find("w-789")
+
+# Uses "X" — explicit kwarg overrides the default:
+AtlasRb::Work.find("w-789", nuid: "X")
+```
+
+If neither the call site nor the registered default supplies a value,
+no header is sent (legacy bearer-only path preserved).
+
+### System-path credentials
+
+Calls under `AtlasRb::System::*` (currently just SSO user provisioning)
+authenticate as the seeded Atlas `:system` fixture, not as a real user.
+They use a **separate** bearer token, looked up from
+`Rails.application.credentials.atlas_system_token`. Storing it in
+encrypted credentials rather than `ENV` halves the blast radius of a
+`.env` leak — the user token and the system token can't both leak
+through the same channel.
+
+```yaml
+# config/credentials.yml.enc (Cerberus side)
+atlas_system_token: <token-Atlas-side-recognises-as-:system>
+```
+
+The system NUID itself is hardcoded as `AtlasRb::System::NUID =
+"000000000"`, matching Atlas's seeded `:system` fixture row.
 
 ## Resource hierarchy
 
@@ -59,6 +114,37 @@ Community  →  Collection  →  Work
 | `AtlasRb::Authentication` | NUID → user record / group lookup.                                     |
 | `AtlasRb::Resource`    | Generic resolver and permissions lookup.                                  |
 | `AtlasRb::Reset`       | Test-only — wipes Atlas state via `GET /reset`.                           |
+
+## Namespace gradient: regular / Admin / System
+
+Operations are split across three namespaces, calibrated to the blast
+radius and the kind of authentication they need:
+
+| Namespace            | What it does                                                                       | Auth                                                | Friction                              |
+|----------------------|------------------------------------------------------------------------------------|-----------------------------------------------------|---------------------------------------|
+| `AtlasRb::*`         | Regular CRUD (find / list / create / update / tombstone / metadata, etc.)          | User token (`ATLAS_TOKEN`) + acting user's NUID     | None — these are the daily-use paths. |
+| `AtlasRb::Admin::*`  | Hard delete (`destroy`) and un-tombstone (`restore`) for Work / Collection / Community. | Same as regular — a real operator is acting.        | `destroy` requires `confirm: :i_understand`. |
+| `AtlasRb::System::*` | System-context provisioning (currently just SSO user find-or-create).              | System token (`Rails.application.credentials.atlas_system_token`) + `User: NUID 000000000`. | The namespace itself is the marker — there is no way to call these as a non-system principal. |
+
+```ruby
+# Regular daily use — picks up Current.nuid via the configured default:
+AtlasRb::Work.find("w-789")
+AtlasRb::Work.tombstone("w-789")     # withdrawal (reversible)
+
+# Operator-only, with a friction marker:
+AtlasRb::Admin::Work.destroy("w-789", confirm: :i_understand)
+AtlasRb::Admin::Work.restore("w-789")
+
+# System-only — authenticates as Atlas's :system fixture:
+AtlasRb::System::User.find_or_create(
+  nuid: "001234567",
+  groups: ["northeastern:staff", "drs:editors"]
+)
+```
+
+The `AtlasRb::System::*` path never consults `AtlasRb.config.default_nuid`
+or `default_on_behalf_of` — there is no ambient user context on system
+calls.
 
 ### A note on `create` argument shapes
 
