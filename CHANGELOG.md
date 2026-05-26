@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0
+
+### Added
+
+- **`AtlasRb::Resource.history(id, nuid: nil, on_behalf_of: nil)`** —
+  wraps Atlas's `GET /resources/:id/history` endpoint. Returns the full
+  envelope (`resource_id` + reverse-chronological `events` array) as an
+  `AtlasRb::Mash`, matching the gem's convention for cross-resource
+  bindings. Authorization errors (`401` / `403`) surface as raw Faraday
+  responses for the caller's rescue layer. Pagination is not yet
+  supported by the server; a TODO is in place for when it lands.
+
+  Cerberus consumes this binding for the "History" tab on resource show
+  pages.
+
 ## 1.0.0 — major restructure: namespace gradient + ambient identity
 
 This release reshapes the gem's API surface. Downstream consumers
