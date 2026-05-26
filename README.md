@@ -112,7 +112,7 @@ Community  →  Collection  →  Work
 | `AtlasRb::FileSet`     | Classified slot under a Work (e.g. `"primary"`, `"supplemental"`).        |
 | `AtlasRb::Blob`        | The binary bytes; supports streaming downloads.                           |
 | `AtlasRb::Authentication` | NUID → user record / group lookup.                                     |
-| `AtlasRb::Resource`    | Generic resolver and permissions lookup.                                  |
+| `AtlasRb::Resource`    | Generic resolver, permissions lookup, and audit-event history.            |
 | `AtlasRb::Reset`       | Test-only — wipes Atlas state via `GET /reset`.                           |
 
 ## Namespace gradient: regular / Admin / System
@@ -186,6 +186,24 @@ AtlasRb::Work.list(in_progress: true)             # stuck deposits
 AtlasRb::Work.list(in_progress: false, page: 2)   # completed deposits, page 2
 AtlasRb::Work.complete("w-789")                   # mark w-789 done
 ```
+
+### Audit-event history
+
+`Resource.history` wraps Atlas's `GET /resources/<id>/history` endpoint
+and returns the full envelope — `resource_id` plus a reverse-chronological
+`events` array — as an `AtlasRb::Mash`. It is type-agnostic: pass any
+Community, Collection, Work, FileSet, or Blob ID. Pagination is not yet
+supported on the server side; the endpoint returns the full history in
+one shot.
+
+```ruby
+result = AtlasRb::Resource.history("w-789")
+result["resource_id"]            # => "w-789"
+result["events"].first["action"] # => "update"
+```
+
+Authorization errors (`401` / `403`) are not caught here — they surface as
+raw Faraday responses for the calling application's rescue layer.
 
 ## End-to-end example
 
