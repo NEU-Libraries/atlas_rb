@@ -5,9 +5,9 @@ module AtlasRb
   #
   # Subclasses define a `ROUTE` constant (e.g. `"/communities/"`) and override
   # whichever of `find / create / destroy / update / metadata / mods` apply.
-  # The {Resource} class itself ships three endpoints that are not
-  # type-specific: a generic resolver, an XML preview helper, and a
-  # permissions lookup.
+  # The {Resource} class itself ships four endpoints that are not
+  # type-specific: a generic resolver, an XML preview helper, a permissions
+  # lookup, and an audit-event history fetch.
   #
   # The Atlas resource hierarchy is:
   #
@@ -90,6 +90,43 @@ module AtlasRb
         connection({}, nuid, on_behalf_of: on_behalf_of)
           .get('/resources/' + id + '/permissions')&.body
       ))["resource"]
+    end
+
+    # Fetch the audit-event history for a resource.
+    #
+    # Wraps Atlas's `GET /resources/<id>/history` endpoint, which returns the
+    # full envelope (`resource_id` + reverse-chronological `events` array).
+    # The whole envelope is preserved so callers can confirm the events
+    # belong to the requested resource; access events as `result["events"]`.
+    #
+    # Authorization errors (`401` / `403`) are intentionally **not** caught
+    # here — they surface as raw Faraday responses for the calling
+    # application's rescue layer to translate.
+    #
+    # @todo Add pagination support once Atlas's history endpoint exposes
+    #   page / per_page query params. Today the endpoint returns the full
+    #   history in one shot.
+    #
+    # @param id [String] an Atlas resource ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [AtlasRb::Mash] the parsed envelope from
+    #   `GET /resources/<id>/history`, with `"resource_id"` and an `"events"`
+    #   array (reverse chronological; possibly empty).
+    #
+    # @example
+    #   result = AtlasRb::Resource.history("abc12345")
+    #   result["resource_id"]            # => "abc12345"
+    #   result["events"].first["action"] # => "create"
+    def self.history(id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .get('/resources/' + id + '/history')&.body
+      ))
     end
   end
 end
