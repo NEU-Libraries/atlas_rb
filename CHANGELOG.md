@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.1
+
+### Added
+
+- **`depositor:` kwarg on `AtlasRb::Work.create`** — optional NUID
+  forwarded as the `depositor` query param on `POST /works`. When
+  omitted, behaviour is unchanged: Atlas defaults the depositor to the
+  acting user. When provided, Atlas stamps the named NUID as the Work's
+  `depositor` and records the acting user as the `proxy_uploader`.
+
+  Motivation: proxy deposit. Librarians and bulk-deposit jobs frequently
+  upload Works on behalf of a researcher who is the rightful credited
+  depositor. Until now there was no way to express that split through
+  the gem — callers had to choose between misattributing the deposit to
+  the librarian or dropping to a raw Faraday call. The depositor is
+  immutable post-create; there is no corresponding setter on the update
+  surface.
+
 ## 1.1.0
 
 ### Added
