@@ -93,6 +93,13 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
+    # @param depositor [String, nil] optional NUID to stamp on the new Work's
+    #   `depositor` field. When omitted, Atlas defaults the depositor to the
+    #   acting user (`nuid:`); this kwarg is the proxy / batch escape hatch
+    #   where the librarian who uploaded the Work is distinct from the person
+    #   it should be attributed to. The acting user becomes the Work's
+    #   `proxy_uploader`. The depositor is immutable post-create; there is no
+    #   setter on the update surface.
     # @return [Hash] the created Work payload (post-update if `xml_path` was
     #   supplied).
     #
@@ -105,9 +112,15 @@ module AtlasRb
     # @example Retry-safe bulk-deposit create
     #   key = SecureRandom.uuid
     #   AtlasRb::Work.create("col-456", idempotency_key: key)
-    def self.create(id, xml_path = nil, idempotency_key: nil, nuid: nil, on_behalf_of: nil)
+    #
+    # @example Proxy deposit — librarian uploads on behalf of a researcher
+    #   AtlasRb::Work.create("col-456", depositor: "000000123")
+    def self.create(id, xml_path = nil, idempotency_key: nil, nuid: nil,
+                    on_behalf_of: nil, depositor: nil)
+      params = { collection_id: id }
+      params[:depositor] = depositor if depositor
       result = AtlasRb::Mash.new(JSON.parse(
-        connection({ collection_id: id }, nuid,
+        connection(params, nuid,
                    on_behalf_of: on_behalf_of, idempotency_key: idempotency_key).post(ROUTE)&.body
       ))["work"]
       return result unless xml_path.present?
