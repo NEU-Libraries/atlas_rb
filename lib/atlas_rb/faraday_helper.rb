@@ -59,6 +59,7 @@ module AtlasRb
         params: params,
         headers: headers
       ) do |f|
+        f.use AtlasRb::Middleware::RaiseOnStaleResource
         f.response :follow_redirects
         f.adapter Faraday.default_adapter
       end
@@ -103,6 +104,7 @@ module AtlasRb
         url: ENV.fetch("ATLAS_URL", nil),
         headers: headers
       ) do |f|
+        f.use AtlasRb::Middleware::RaiseOnStaleResource
         f.request :multipart
         f.request :url_encoded
       end

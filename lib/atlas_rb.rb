@@ -4,7 +4,9 @@ require "faraday"
 require "faraday/multipart"
 require "faraday/follow_redirects"
 require_relative "atlas_rb/version"
+require_relative "atlas_rb/errors"
 require_relative "atlas_rb/configuration"
+require_relative "atlas_rb/middleware/raise_on_stale_resource"
 require_relative "atlas_rb/faraday_helper"
 require_relative "atlas_rb/mash"
 require_relative "atlas_rb/authentication"
@@ -69,10 +71,8 @@ require_relative "atlas_rb/system/user"
 #     AtlasRb::Blob.content(blob["id"]) { |chunk| f.write(chunk) }
 #   end
 module AtlasRb
-  # Generic error raised by future code paths; not currently used by any
-  # resource class. Atlas errors today surface as raw `Faraday::Response`
-  # objects or `JSON::ParserError`s on malformed bodies.
-  class Error < StandardError; end
+  # The error hierarchy ({AtlasRb::Error}, {AtlasRb::StaleResourceError}) lives
+  # in `atlas_rb/errors.rb`, required above.
 
   # The gem-wide configuration instance. Lazily initialized — host
   # applications register defaults via {AtlasRb.configure}.
