@@ -170,6 +170,9 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @return [Faraday::Response] the raw response. Status `200` on success.
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
     #
     # @example
     #   AtlasRb::Work.complete("w-789")
@@ -243,6 +246,9 @@ module AtlasRb
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
     # @return [AtlasRb::Mash] the parsed JSON response.
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
     #
     # @example
     #   AtlasRb::Work.set_thumbnails(
@@ -276,6 +282,9 @@ module AtlasRb
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
     # @return [AtlasRb::Mash] the parsed JSON response.
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
     #
     # @example
     #   AtlasRb::Work.set_image_derivatives(

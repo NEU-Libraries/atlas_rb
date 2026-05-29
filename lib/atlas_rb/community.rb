@@ -179,6 +179,9 @@ module AtlasRb
     #   `User:` header. Required for cerberus-token requests; legacy bearer
     #   tokens still resolve without it.
     # @return [AtlasRb::Mash] the parsed JSON response.
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
     #
     # @example
     #   AtlasRb::Community.set_thumbnails(
