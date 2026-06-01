@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.2.0
+
+### Added — Tree/DAG foundation bindings
+
+Thin Faraday mirrors for the two membership mutations Atlas shipped as
+part of the DRS "Tree/DAG foundation" (re-parenting and linked members).
+No client-side logic — the gem mirrors Atlas's wire and never queries
+Solr.
+
+- **`AtlasRb::Collection.reparent(id, new_parent_id, nuid: nil, on_behalf_of: nil)`**
+- **`AtlasRb::Community.reparent(id, new_parent_id, nuid: nil, on_behalf_of: nil)`**
+- **`AtlasRb::Work.reparent(id, new_collection_id, nuid: nil, on_behalf_of: nil)`**
+
+  Bind `PATCH /<type>/:id/parent` with a `{ parent_id }` body, moving a
+  resource to a new structural parent. Mirrors `create`'s single-parent-id
+  shape and returns the updated resource (same shape as `find`), reflecting
+  the new `a_member_of`. `Community.reparent` accepts `new_parent_id: nil`
+  to promote a Community to the top of the tree — the same way
+  `Community.create(nil)` makes a top-level Community; a `nil` destination
+  is rejected by Atlas for Works and Collections. Atlas enforces the
+  structural rules (type, cycle, tombstone) server-side and synchronously
+  cascades the ancestry index over descendants, surfacing violations as
+  `422`. The Work re-parent endpoint is included — Atlas shipped it (the
+  plan had flagged it as optional). All three endpoints use the shared
+  `parent_id` body key, including the Work one (not `collection_id`).
+
+- **`AtlasRb::Work.linked_members(id, nuid: nil, on_behalf_of: nil)`** —
+  `GET /works/:id/linked_members`.
+- **`AtlasRb::Work.add_linked_member(work_id, collection_id, nuid: nil, on_behalf_of: nil)`** —
+  `POST /works/:id/linked_members` with a `{ collection_id }` body.
+- **`AtlasRb::Work.remove_linked_member(work_id, collection_id, nuid: nil, on_behalf_of: nil)`** —
+  `DELETE /works/:id/linked_members/:collection_id` (Collection as a path
+  segment).
+
+  The DAG overlay: a Work has one structural parent (`a_member_of`) but
+  may additionally be a *linked* member of any number of other Collections
+  (`a_linked_member_of`). These manage that overlay without moving the
+  Work. All three return the Work's current linked Collection noids as a
+  bare array (mirroring `Collection.children`); the two mutations return
+  the list *after* the change, so no follow-up GET is needed.
+
+  Cerberus consumes these from the re-parent and "add to collection" UI.
+
 ## 1.1.1
 
 ### Added

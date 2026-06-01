@@ -205,6 +205,47 @@ result["events"].first["action"] # => "update"
 Authorization errors (`401` / `403`) are not caught here — they surface as
 raw Faraday responses for the calling application's rescue layer.
 
+### Re-parenting
+
+`reparent` moves a resource to a new structural parent, binding Atlas's
+`PATCH /<type>/:id/parent` endpoint. It mirrors `create`'s "single parent
+id" shape and returns the updated resource (same shape as `find`), so the
+caller sees the new `a_member_of` without a follow-up GET. Atlas enforces
+the structural rules (type, cycle, tombstone guards) server-side and
+synchronously cascades the ancestry index over descendants; rule
+violations come back as `422`.
+
+```ruby
+AtlasRb::Collection.reparent("col-456", "c-999")  # move collection to community c-999
+AtlasRb::Work.reparent("w-789", "col-999")         # move work to collection col-999
+AtlasRb::Community.reparent("c-123", "c-999")      # nest community under c-999
+AtlasRb::Community.reparent("c-123", nil)          # promote community to top of tree
+```
+
+Only `Community.reparent` accepts a `nil` destination (move to the top of
+the tree) — the same way `Community.create(nil)` makes a top-level
+community. A `nil` destination for a Work or Collection is rejected by
+Atlas.
+
+### Linked members (the DAG overlay)
+
+A Work has exactly one structural parent (`a_member_of`, set by `create` /
+`reparent`) but may additionally be a *linked* member of any number of
+other Collections (`a_linked_member_of`). The linked-member bindings on
+`Work` manage that overlay without ever moving the Work:
+
+```ruby
+AtlasRb::Work.linked_members("w-789")                 # => ["col-456", "col-457"]
+AtlasRb::Work.add_linked_member("w-789", "col-456")    # => ["col-456"]  (updated list)
+AtlasRb::Work.remove_linked_member("w-789", "col-456") # => []           (updated list)
+```
+
+All three return the Work's current linked Collection noids as a bare
+array (mirroring `Collection.children`); the two mutations return the list
+*after* the change, so no follow-up `linked_members` GET is needed.
+Resolving those Collections' full contents is a Cerberus/Solr concern —
+this gem never queries the index.
+
 ## End-to-end example
 
 JSON responses come back as `AtlasRb::Mash` (a `Hashie::Mash` subclass), so
