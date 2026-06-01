@@ -386,5 +386,101 @@ module AtlasRb
         ROUTE + id + '/mods' + (kind.present? ? ".#{kind}" : '')
         )&.body
     end
+
+    # List the Collections a Work is a *linked* member of.
+    #
+    # Wraps `GET /works/<id>/linked_members`. Linked membership is the DAG
+    # overlay — a Work has exactly one structural parent (`a_member_of`, set
+    # by {.create} / {.reparent}) but may additionally appear in any number
+    # of other Collections as a linked member (`a_linked_member_of`). This
+    # returns just those linked Collection noids; the structural parent is
+    # not included.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Array<String>] linked Collection noids (possibly empty). The
+    #   shape mirrors {Collection.children} — a bare array of ids, not an
+    #   envelope.
+    #
+    # @example
+    #   AtlasRb::Work.linked_members("w-789")
+    #   # => ["col-456", "col-457"]
+    def self.linked_members(id, nuid: nil, on_behalf_of: nil)
+      JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/linked_members')&.body
+      )
+    end
+
+    # Add a linked membership: surface a Work in an additional Collection.
+    #
+    # Wraps `POST /works/<id>/linked_members` with a `collection_id` body.
+    # This does **not** move the Work — its structural parent (`a_member_of`)
+    # is untouched; the Collection is added to `a_linked_member_of`. Atlas
+    # enforces two-sided authorization (edit on the Work *and* the target
+    # Collection) and the structural guards, surfacing failures as a `422`.
+    # Permissions are never changed by this call.
+    #
+    # @param work_id [String] the Work ID.
+    # @param collection_id [String] the Collection to link the Work into.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Array<String>] the Work's full set of linked Collection noids
+    #   *after* the add — the affected sub-resource, so no follow-up
+    #   {.linked_members} GET is needed.
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
+    #
+    # @example
+    #   AtlasRb::Work.add_linked_member("w-789", "col-456")
+    #   # => ["col-456"]
+    def self.add_linked_member(work_id, collection_id, nuid: nil, on_behalf_of: nil)
+      JSON.parse(
+        connection({ collection_id: collection_id }, nuid, on_behalf_of: on_behalf_of)
+          .post(ROUTE + work_id + '/linked_members')&.body
+      )
+    end
+
+    # Remove a linked membership: drop a Work from an additional Collection.
+    #
+    # Wraps `DELETE /works/<id>/linked_members/<collection_id>` — the
+    # Collection is passed as a path segment, not a body. This removes the
+    # Collection from the Work's `a_linked_member_of`; the structural parent
+    # (`a_member_of`) is untouched. Atlas enforces the same two-sided
+    # authorization as {.add_linked_member}. Removing a link that does not
+    # exist is a server-side concern; this binding simply forwards the call.
+    #
+    # @param work_id [String] the Work ID.
+    # @param collection_id [String] the linked Collection to remove.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Array<String>] the Work's remaining linked Collection noids
+    #   *after* the removal (possibly empty).
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
+    #
+    # @example
+    #   AtlasRb::Work.remove_linked_member("w-789", "col-456")
+    #   # => []
+    def self.remove_linked_member(work_id, collection_id, nuid: nil, on_behalf_of: nil)
+      JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .delete(ROUTE + work_id + '/linked_members/' + collection_id)&.body
+      )
+    end
   end
 end
