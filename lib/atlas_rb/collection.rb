@@ -65,6 +65,39 @@ module AtlasRb
       find(result["id"], nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
+    # Move a Collection to a different parent Community.
+    #
+    # Wraps `PATCH /collections/<id>/parent` with a `parent_id` of the new
+    # Community. Atlas re-parents the Collection and synchronously cascades
+    # the ancestry index over its Works; the structural rules (type, cycle,
+    # tombstone guards) are enforced server-side and surface as a `422`.
+    #
+    # Mirrors {.create}'s "single parent id" shape — same kwarg threading,
+    # the only difference is the verb and that the Collection already exists.
+    #
+    # @param id [String] the Collection ID to move.
+    # @param new_parent_id [String] the destination Community ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Hash] the updated `"collection"` object, already unwrapped —
+    #   the same shape {.find} returns, reflecting the new `a_member_of`.
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
+    #
+    # @example
+    #   AtlasRb::Collection.reparent("col-456", "c-999")
+    def self.reparent(id, new_parent_id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({ parent_id: new_parent_id }, nuid, on_behalf_of: on_behalf_of)
+          .patch(ROUTE + id + '/parent')&.body
+      ))["collection"]
+    end
+
     # Tombstone (withdraw) a Collection.
     #
     # The Collection remains in Atlas storage but is marked as withdrawn:

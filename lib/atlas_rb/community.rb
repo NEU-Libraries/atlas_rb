@@ -69,6 +69,45 @@ module AtlasRb
       find(result["id"], nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
+    # Move a Community to a different parent Community — or to the top of the
+    # tree.
+    #
+    # Wraps `PATCH /communities/<id>/parent` with a `parent_id` of the new
+    # parent Community. Pass `new_parent_id = nil` to promote the Community to
+    # a top-level node (no parent) — mirroring how {.create} treats a `nil`
+    # `id`; the gem omits the blank param and Atlas reads it as "move to top".
+    # Atlas re-parents the Community and synchronously cascades the ancestry
+    # index over its descendant Collections and Works; the structural rules
+    # (cycle, tombstone guards) are enforced server-side and surface as a
+    # `422`.
+    #
+    # @param id [String] the Community ID to move.
+    # @param new_parent_id [String, nil] the destination Community ID, or
+    #   `nil` to move the Community to the top of the tree.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Hash] the updated `"community"` object, already unwrapped —
+    #   the same shape {.find} returns, reflecting the new `a_member_of`.
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
+    #
+    # @example Move under another Community
+    #   AtlasRb::Community.reparent("c-123", "c-999")
+    #
+    # @example Promote to a top-level Community
+    #   AtlasRb::Community.reparent("c-123", nil)
+    def self.reparent(id, new_parent_id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({ parent_id: new_parent_id }, nuid, on_behalf_of: on_behalf_of)
+          .patch(ROUTE + id + '/parent')&.body
+      ))["community"]
+    end
+
     # Tombstone (withdraw) a Community.
     #
     # The Community remains in Atlas storage but is marked as withdrawn:
