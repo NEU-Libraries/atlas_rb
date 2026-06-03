@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.2.1
+
+### Added — typed errors for re-parent / linked-member rejections
+
+The re-parent and linked-member bindings no longer swallow Atlas's `4xx`
+error envelope. Previously a `422`/`403` parsed fine but lacked the
+success key (`"collection"` / `"work"` / `"community"`), so the binding
+returned `nil` and discarded Atlas's machine-readable `error` / `message`
+— callers could not tell an invalid move from a not-found from a
+forbidden one.
+
+- **`AtlasRb::ReparentError`** — raised on a `422` to a `.../parent` path
+  (`Collection`/`Community`/`Work.reparent`). Carries the envelope's
+  `error` discriminator as `#code` (`cycle`, `invalid_parent_type`,
+  `tombstoned_node`, `tombstoned_parent`, `parent_required`,
+  `parent_not_found`) plus `#resource_id` and `#message`.
+- **`AtlasRb::LinkedMemberError`** — raised on a `422` to a
+  `.../linked_members` path (`Work.add_linked_member` /
+  `remove_linked_member`). Same shape (`#code`, `#resource_id`, `#message`).
+- **`AtlasRb::ForbiddenError`** — raised on a `403` to either path.
+  Carries `#code`, `#action`, and `#subject` from the envelope.
+
+All three subclass `AtlasRb::Error`. A new
+`AtlasRb::Middleware::RaiseOnResourceError` (registered alongside
+`RaiseOnStaleResource`) performs the translation, keyed on the request
+**path + status** so it stays narrow: only the re-parent and linked-member
+write paths are affected, and only `403`/`422` bodies carrying an `error`
+discriminator. Other endpoints, other statuses, and the `tombstone`
+endpoint's `code: "has_live_children"` body are untouched, and the `409`
+optimistic-lock conflict still surfaces as `StaleResourceError`. Rescue is
+opt-in — callers that don't discriminate see the success payload exactly as
+before.
+
 ## 1.2.0
 
 ### Added — Tree/DAG foundation bindings

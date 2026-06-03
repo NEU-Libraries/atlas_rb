@@ -156,6 +156,12 @@ module AtlasRb
     # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
     #   conflict that exhausted its internal retry budget (HTTP 409 with
     #   `error: "stale_resource"`).
+    # @raise [AtlasRb::ReparentError] if Atlas rejects the move on structural
+    #   grounds (HTTP 422 — `cycle`, `invalid_parent_type`, `tombstoned_node`,
+    #   `tombstoned_parent`, `parent_required`, `parent_not_found`). The
+    #   envelope's `error` code is exposed as `#code`.
+    # @raise [AtlasRb::ForbiddenError] if Atlas refuses the move on
+    #   authorization grounds (HTTP 403).
     #
     # @example
     #   AtlasRb::Work.reparent("w-789", "col-999")
@@ -439,6 +445,11 @@ module AtlasRb
     # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
     #   conflict that exhausted its internal retry budget (HTTP 409 with
     #   `error: "stale_resource"`).
+    # @raise [AtlasRb::LinkedMemberError] if Atlas rejects the link on
+    #   structural grounds (HTTP 422). The envelope's `error` code is exposed
+    #   as `#code`.
+    # @raise [AtlasRb::ForbiddenError] if Atlas refuses the link on
+    #   authorization grounds (HTTP 403).
     #
     # @example
     #   AtlasRb::Work.add_linked_member("w-789", "col-456")
@@ -472,6 +483,11 @@ module AtlasRb
     # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
     #   conflict that exhausted its internal retry budget (HTTP 409 with
     #   `error: "stale_resource"`).
+    # @raise [AtlasRb::LinkedMemberError] if Atlas rejects the removal on
+    #   structural grounds (HTTP 422). The envelope's `error` code is exposed
+    #   as `#code`.
+    # @raise [AtlasRb::ForbiddenError] if Atlas refuses the removal on
+    #   authorization grounds (HTTP 403).
     #
     # @example
     #   AtlasRb::Work.remove_linked_member("w-789", "col-456")

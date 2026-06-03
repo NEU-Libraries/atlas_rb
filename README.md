@@ -227,6 +227,28 @@ the tree) — the same way `Community.create(nil)` makes a top-level
 community. A `nil` destination for a Work or Collection is rejected by
 Atlas.
 
+When Atlas rejects a move, the binding raises a typed error carrying the
+machine-readable `error` code from Atlas's envelope, rather than returning
+`nil` — so callers can message the *specific* reason:
+
+```ruby
+begin
+  AtlasRb::Collection.reparent("col-456", "c-999")
+rescue AtlasRb::ReparentError => e
+  e.code     # => "cycle" / "invalid_parent_type" / "tombstoned_parent" / …
+  e.message  # => human-readable description from Atlas
+rescue AtlasRb::ForbiddenError => e
+  e.code     # => the authz failure (HTTP 403)
+end
+```
+
+`ReparentError` (HTTP 422, structural rules: `cycle`, `invalid_parent_type`,
+`tombstoned_node`, `tombstoned_parent`, `parent_required`,
+`parent_not_found`) and `ForbiddenError` (HTTP 403, authorization) both
+subclass `AtlasRb::Error`. The `409` optimistic-lock conflict still surfaces
+as `StaleResourceError`, unchanged. Rescue is opt-in — callers that don't
+care keep the success payload as before.
+
 ### Linked members (the DAG overlay)
 
 A Work has exactly one structural parent (`a_member_of`, set by `create` /
@@ -245,6 +267,10 @@ array (mirroring `Collection.children`); the two mutations return the list
 *after* the change, so no follow-up `linked_members` GET is needed.
 Resolving those Collections' full contents is a Cerberus/Solr concern —
 this gem never queries the index.
+
+The two mutations raise the same way `reparent` does — `LinkedMemberError`
+on a structural `422` (carrying the envelope's `error` code as `#code`) and
+`ForbiddenError` on a `403` — instead of swallowing the envelope.
 
 ## End-to-end example
 
