@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Added — `AtlasRb::AuditEvent.emit` (session-scoped audit events)
+
+A new binding for Atlas's `POST /audit_events` endpoint, which records an
+AuditEvent with a **null `resource_id`** — an event not tied to any
+resource write. This is the gem's half of the impersonation audit trail
+(acting-as / view-as): the session lifecycle lives entirely in the calling
+application, and a view-as session performs no writes, so neither leaves a
+per-resource event for `Resource.history` to surface.
+
+```ruby
+AtlasRb::AuditEvent.emit(
+  action:            "impersonation_started",  # or "impersonation_ended"
+  actor_nuid:        admin_nuid,
+  on_behalf_of_nuid: target_nuid,
+  mode:              "acting_as"               # or "view_as"
+)
+```
+
+- The recorded principals (`actor_nuid`, `on_behalf_of_nuid`), `mode`, and
+  an optional free-form `payload:` travel in the request **body**, not in
+  ambient headers — so the call is self-describing even when fired as a
+  session is being torn down (e.g. `impersonation_ended`).
+- The request authenticates via the standard `connection` (system token),
+  with the `User: NUID` header pinned to `actor_nuid` so the server-side
+  admin gate holds regardless of ambient `Current` state.
+- `on_behalf_of_nuid`, `mode`, and `payload` are omitted from the body when
+  blank, leaving room for future, mode-less session events. Atlas stamps
+  `occurred_at` server-side.
+- Authorization errors (`401` / `403`) surface as raw Faraday responses,
+  matching `Resource.history`.
+
+Depends on the matching Atlas-side `POST /audit_events` emit endpoint
+(nullable resource scope, admin-gated); see the impersonation gap report.
+
 ## 1.2.1
 
 ### Added — typed errors for re-parent / linked-member rejections

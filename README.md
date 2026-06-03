@@ -113,6 +113,7 @@ Community  →  Collection  →  Work
 | `AtlasRb::Blob`        | The binary bytes; supports streaming downloads.                           |
 | `AtlasRb::Authentication` | NUID → user record / group lookup.                                     |
 | `AtlasRb::Resource`    | Generic resolver, permissions lookup, and audit-event history.            |
+| `AtlasRb::AuditEvent`  | Emit a session-scoped (resource-less) audit event, e.g. impersonation.    |
 | `AtlasRb::Reset`       | Test-only — wipes Atlas state via `GET /reset`.                           |
 
 ## Namespace gradient: regular / Admin / System
@@ -204,6 +205,45 @@ result["events"].first["action"] # => "update"
 
 Authorization errors (`401` / `403`) are not caught here — they surface as
 raw Faraday responses for the calling application's rescue layer.
+
+### Session-scoped audit events
+
+`Resource.history` only reads events that hang off a resource write. Some
+auditable events have no resource to attach to — most notably impersonation
+sessions (acting-as / view-as): the session lifecycle lives in the calling
+app, and a view-as session performs no writes at all, so it would otherwise
+leave no audit trail. `AtlasRb::AuditEvent.emit` wraps Atlas's
+`POST /audit_events` endpoint, which records an event with a **null
+`resource_id`**.
+
+The principals and metadata travel in the request body — not inferred from
+ambient headers — so the call is self-describing even when fired as a
+session is being torn down. The request is admin-gated server-side; the
+`User: NUID` header is pinned to the `actor_nuid` you pass.
+
+```ruby
+# An admin starts acting as another user:
+AtlasRb::AuditEvent.emit(
+  action:            "impersonation_started",
+  actor_nuid:        Current.nuid,   # the admin (also the User: header)
+  on_behalf_of_nuid: target_nuid,    # the impersonated user
+  mode:              "acting_as"      # or "view_as"
+)
+
+# …and later ends the session:
+AtlasRb::AuditEvent.emit(
+  action:            "impersonation_ended",
+  actor_nuid:        admin_nuid,
+  on_behalf_of_nuid: target_nuid,
+  mode:              "acting_as"
+)
+```
+
+`on_behalf_of_nuid`, `mode`, and `payload:` (free-form metadata) are
+omitted from the body when blank, so `emit` can also carry future,
+mode-less session events. Atlas stamps `occurred_at` server-side.
+Authorization errors (`401` / `403`) surface as raw Faraday responses,
+matching `Resource.history`.
 
 ### Re-parenting
 
