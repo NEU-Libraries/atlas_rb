@@ -60,6 +60,7 @@ module AtlasRb
         headers: headers
       ) do |f|
         f.use AtlasRb::Middleware::RaiseOnStaleResource
+        f.use AtlasRb::Middleware::RaiseOnResourceError
         f.response :follow_redirects
         f.adapter Faraday.default_adapter
       end
