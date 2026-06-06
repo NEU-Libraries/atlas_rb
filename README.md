@@ -312,6 +312,27 @@ The two mutations raise the same way `reparent` does — `LinkedMemberError`
 on a structural `422` (carrying the envelope's `error` code as `#code`) and
 `ForbiddenError` on a `403` — instead of swallowing the envelope.
 
+### Batch resolve (`Resource.find_many`)
+
+When you have a *set* of NOIDs and only need each one's title / klass /
+thumbnail — breadcrumb chains, linked-member lists, load-destination
+pickers — resolve them in one round-trip instead of a `find`-per-id
+fan-out:
+
+```ruby
+nodes   = AtlasRb::Resource.find_many(["col-456", "col-457", "missing"])
+by_noid = nodes.index_by { |n| n["noid"] }
+by_noid["col-456"].title   # => "Some Collection"
+```
+
+Each entry is a lightweight digest — `{ "id", "noid", "klass", "title",
+"thumbnail", "tombstoned" }` — not the full typed payload. The ids travel
+in the request body (no URL-length ceiling). The result is **unordered**
+and **may be shorter than the input**: unresolvable ids are dropped and
+tombstoned resources come back flagged (`"tombstoned" => true`), so index
+by `"noid"` rather than assuming positional correspondence. NOIDs only —
+raw Valkyrie ids are not a supported input.
+
 ## End-to-end example
 
 JSON responses come back as `AtlasRb::Mash` (a `Hashie::Mash` subclass), so

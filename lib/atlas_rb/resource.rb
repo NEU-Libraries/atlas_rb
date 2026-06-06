@@ -47,6 +47,44 @@ module AtlasRb
                         "resource" => result.first[1])
     end
 
+    # Resolve many resources by NOID in a single round-trip.
+    #
+    # Wraps Atlas's `POST /resources/find_many`, which returns one lightweight
+    # digest per resolvable resource — `{ "id", "noid", "klass", "title",
+    # "thumbnail", "tombstoned" }` — rather than full typed payloads. Use it
+    # anywhere a set of ids would otherwise be resolved with a `find`-per-id
+    # fan-out (breadcrumb chains, linked-member lists, load-destination
+    # pickers): one HTTP call instead of N.
+    #
+    # The ids travel in the request **body**, so the list is not bounded by
+    # URL length. The result is **unordered** and **may be shorter than the
+    # input** — unresolvable ids are dropped silently, and tombstoned
+    # resources come back flagged (`"tombstoned" => true`) rather than
+    # omitted. Index the result by `"noid"`; do not assume positional
+    # correspondence with `ids`.
+    #
+    # @param ids [Array<String>] resource NOIDs to resolve. (Raw Valkyrie ids
+    #   are not a supported input — the endpoint resolves alternate ids only.)
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Array<AtlasRb::Mash>] one digest Mash per resolved resource
+    #   (dot- or string-keyed access); empty when nothing resolved.
+    #
+    # @example Resolve a set of collection titles in one call
+    #   nodes  = AtlasRb::Resource.find_many(["col-456", "col-457", "missing"])
+    #   by_noid = nodes.index_by { |n| n["noid"] }
+    #   by_noid["col-456"].title   # => "Some Collection"
+    def self.find_many(ids, nuid: nil, on_behalf_of: nil)
+      JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .post('/resources/find_many', JSON.dump(ids: Array(ids)))&.body
+      ).map { |node| AtlasRb::Mash.new(node) }
+    end
+
     # Validate a MODS XML document against Atlas's schema *without* persisting it.
     #
     # Useful for surfacing validation errors in UIs before the user commits.

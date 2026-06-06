@@ -1,6 +1,33 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
+
+### Added — `AtlasRb::Resource.find_many` (batch resolve by NOID)
+
+A binding for Atlas's `POST /resources/find_many`. Resolves a set of NOIDs
+to lightweight digests in **one** round-trip, replacing the `find`-per-id
+fan-out that several Cerberus surfaces (breadcrumbs, linked-member lists,
+load-destination pickers) paid on every render.
+
+```ruby
+nodes   = AtlasRb::Resource.find_many(["col-456", "col-457", "missing"])
+by_noid = nodes.index_by { |n| n["noid"] }
+by_noid["col-456"].title   # => "Some Collection"
+```
+
+- Each digest is `{ "id", "noid", "klass", "title", "thumbnail",
+  "tombstoned" }` — not the full typed payload. `title` / `thumbnail` are
+  `null` for resources off the Modsable backbone (FileSet/Blob).
+- The ids ride in the request **body**, so the list isn't bounded by URL
+  length. Returns one `AtlasRb::Mash` per resolved resource.
+- The result is **unordered** and **may be shorter than the input**:
+  unresolvable ids are dropped, tombstoned ones come back flagged
+  (`"tombstoned" => true`). Index by `"noid"` — don't assume positional
+  correspondence with the input.
+- Resolves NOIDs (alternate ids) only; raw Valkyrie ids are not a supported
+  input.
+
+## 1.2.2
 
 ### Added — `AtlasRb::AuditEvent.emit` (session-scoped audit events)
 
