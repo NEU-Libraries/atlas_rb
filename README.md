@@ -245,6 +245,44 @@ mode-less session events. Atlas stamps `occurred_at` server-side.
 Authorization errors (`401` / `403`) surface as raw Faraday responses,
 matching `Resource.history`.
 
+### MODS version history
+
+Every descriptive-metadata edit retains the prior MODS XML on the server.
+`Resource.mods_versions` lists the retained versions; `Resource.mods_version`
+fetches the raw MODS XML as of one of them — together enough to render a
+line-diff between any two MODS states. Both are type-agnostic (pass any
+Community, Collection, or Work ID).
+
+```ruby
+history = AtlasRb::Resource.mods_versions("w-789")
+history["resource_id"]                    # => "w-789"
+history["versions"].first["version_id"]   # => "v5"  (newest first)
+history["versions"].first["actor_nuid"]    # => "000000002" (or nil)
+
+# Fetch two versions and diff them:
+old_xml = AtlasRb::Resource.mods_version("w-789", "v3")
+new_xml = AtlasRb::Resource.mods_version("w-789", "v5")
+```
+
+`mods_versions` returns the full envelope (`resource_id` + a
+reverse-chronological `versions` array) as an `AtlasRb::Mash`; each
+descriptor mirrors the audit-event shape (`version_id`, `created`,
+`actor_nuid`, `on_behalf_of_nuid`, `source`, `note`), so the two streams
+render with the same helpers. Actor attribution is correlated from the
+audit log and may be `null`. The endpoint is admin-gated server-side
+(it exposes edit attribution).
+
+`mods_version` returns the **raw XML body** — like `Work.mods`, not a Mash.
+Only XML is version-recoverable (the JSON access copy is overwritten in
+place), so the server serves historical XML; `kind:` is accepted for parity
+with `Work.mods` but XML is the only retained format.
+
+Version labels are **opaque, sortable OCFL `vN` strings**, not a 1-based
+counter — a Blob's preservation envelope occupies earlier versions, so the
+first MODS version is typically `v3`. Treat them as identifiers to feed back
+into `mods_version`. A resource with no MODS returns `{ "versions" => [] }`;
+`401` / `403` surface as raw Faraday responses, matching `Resource.history`.
+
 ### Re-parenting
 
 `reparent` moves a resource to a new structural parent, binding Atlas's

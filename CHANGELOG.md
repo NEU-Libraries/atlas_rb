@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.3.1
+
+### Added — `AtlasRb::Resource.mods_versions` / `mods_version` (MODS version history)
+
+Two bindings for Atlas's MODS version-history endpoints. `mods_versions`
+lists the retained versions of a resource's descriptive metadata;
+`mods_version` fetches the raw MODS XML as of a specific version — together
+enough to drive a line-diff between any two MODS states.
+
+```ruby
+history = AtlasRb::Resource.mods_versions("w-789")
+history["versions"].first["version_id"]  # => "v5"   (newest)
+history["versions"].first["actor_nuid"]   # => "000000002"
+
+old_xml = AtlasRb::Resource.mods_version("w-789", "v3")
+new_xml = AtlasRb::Resource.mods_version("w-789", "v5")
+```
+
+- `mods_versions` returns the full envelope (`resource_id` + a
+  reverse-chronological `versions` array) as an `AtlasRb::Mash`. Each
+  descriptor mirrors the audit-event shape (`version_id`, `created`,
+  `actor_nuid`, `on_behalf_of_nuid`, `source`, `note`); actor fields are
+  correlated from the audit log and may be `null`. Admin-gated server-side.
+- `mods_version` returns the **raw XML body** (mirroring `Work.mods`). Only
+  XML is version-recoverable — the JSON access copy is overwritten in place
+  — so `kind:` is accepted for parity but XML is the only retained format.
+- Version labels are opaque, sortable OCFL `vN` strings (a Blob's
+  preservation envelope occupies earlier versions, so the first MODS
+  version is typically `v3`). Treat them as identifiers to feed back into
+  `mods_version`, not as ordinals.
+- Both are type-agnostic (Community / Collection / Work) and live on
+  `Resource` beside `history` / `permissions`. A resource with no MODS
+  returns `{ "versions" => [] }`.
+
 ## 1.3.0
 
 ### Added — `AtlasRb::Resource.find_many` (batch resolve by NOID)

@@ -166,5 +166,81 @@ module AtlasRb
           .get('/resources/' + id + '/history')&.body
       ))
     end
+
+    # List the retained MODS versions for a resource.
+    #
+    # Wraps Atlas's `GET /resources/<id>/mods/versions`, which returns the
+    # full envelope — `resource_id` plus a reverse-chronological `versions`
+    # array — as an `AtlasRb::Mash`. Each version descriptor mirrors the
+    # audit-event shape (`version_id`, `created`, `actor_nuid`,
+    # `on_behalf_of_nuid`, `source`, `note`) so the two streams render with
+    # the same helpers; actor fields are correlated from the audit log and
+    # may be `null` when a version has no matching edit event.
+    #
+    # Type-agnostic: pass any Modsable resource ID (Community, Collection,
+    # Work). A resource with no MODS comes back as `{ "versions" => [] }`.
+    #
+    # Version labels are opaque, sortable OCFL `vN` strings — not a 1-based
+    # counter — so treat them as identifiers to feed back into
+    # {mods_version}, not as ordinals. The server admin-gates this endpoint
+    # (it exposes edit attribution); `401` / `403` surface as raw Faraday
+    # responses, matching {history}.
+    #
+    # @param id [String] an Atlas resource ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [AtlasRb::Mash] the parsed envelope, with `"resource_id"` and a
+    #   `"versions"` array (reverse chronological; possibly empty).
+    #
+    # @example
+    #   history = AtlasRb::Resource.mods_versions("w-789")
+    #   history["versions"].first["version_id"] # => "v5"
+    #   history["versions"].first["actor_nuid"]  # => "000000002"
+    def self.mods_versions(id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .get('/resources/' + id + '/mods/versions')&.body
+      ))
+    end
+
+    # Fetch the MODS document as of a specific version.
+    #
+    # Wraps Atlas's `GET /resources/<id>/mods/versions/<version_id>` and
+    # returns the **raw response body** (not parsed) — mirroring
+    # {Work.mods}. Pass a `version_id` obtained from {mods_versions} (an
+    # opaque OCFL `vN` label).
+    #
+    # Only XML is version-recoverable: the JSON access copy is overwritten in
+    # place, so the server serves historical XML (the default). `kind:` is
+    # accepted for parity with {Work.mods} but XML is currently the only
+    # supported format. An unknown version yields a `404` (raw Faraday
+    # response).
+    #
+    # @param id [String] an Atlas resource ID.
+    # @param version_id [String] an OCFL version label from {mods_versions},
+    #   e.g. `"v3"`.
+    # @param kind [String, nil] response format extension. Omit (or pass
+    #   `"xml"`) for the historical XML — the only format the server retains.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [String] the raw MODS XML body for that version.
+    #
+    # @example Diff two MODS versions
+    #   old_xml = AtlasRb::Resource.mods_version("w-789", "v3")
+    #   new_xml = AtlasRb::Resource.mods_version("w-789", "v5")
+    def self.mods_version(id, version_id, kind: nil, nuid: nil, on_behalf_of: nil)
+      connection({}, nuid, on_behalf_of: on_behalf_of).get(
+        '/resources/' + id + '/mods/versions/' + version_id +
+          (kind.present? ? ".#{kind}" : '')
+      )&.body
+    end
   end
 end
