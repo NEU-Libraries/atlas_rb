@@ -371,6 +371,78 @@ module AtlasRb
       ).map { |entry| AtlasRb::Mash.new(entry) }
     end
 
+    # List a Work's page FileSets in order, each with its assets.
+    #
+    # Wraps `GET /works/<id>/file_sets` — the ordered, grouped sibling of
+    # {.assets} (which flattens FileSet membership away). One entry per
+    # page-bearing FileSet, sorted `position` ascending with unordered
+    # (`null`-position) FileSets last; metadata and derivative-container
+    # FileSets are excluded as entries. Each entry nests its downloadable
+    # assets — the page's content Blobs plus any per-page IIIF Delegates —
+    # in the same polymorphic shape {.assets} returns.
+    #
+    # This is the read a IIIF Presentation manifest assembler needs: the
+    # response is **unpaginated** by design, so the whole page sequence
+    # arrives in one call.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Array<AtlasRb::Mash>] one entry per page FileSet, in page
+    #   order: `{ "noid", "type", "position", "tombstoned", "assets" => [...] }`.
+    #
+    # @example Assemble manifest canvases in page order
+    #   AtlasRb::Work.file_sets("w-789").each do |page|
+    #     iiif = page.assets.find { |a| a["uri"] }
+    #     add_canvas(order: page.position, image: iiif&.uri)
+    #   end
+    def self.file_sets(id, nuid: nil, on_behalf_of: nil)
+      JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/file_sets')&.body
+      ).map { |entry| AtlasRb::Mash.new(entry) }
+    end
+
+    # Fetch the Work-level METS structural metadata (page order).
+    #
+    # Wraps `GET /works/<id>/mets` — the JSON projection of the Work's METS
+    # document, whose physical structMap is the preservation record of page
+    # order. The page sequence surfaces under `"mets" => "pages"` (one entry
+    # per page: `noid` / `order` / `label`). Atlas builds the document when
+    # the Work is completed ({.complete}) and rebuilds it on page changes
+    # thereafter, so a Work that has never been completed has no METS yet —
+    # Atlas answers `404` and this binding returns `nil` (matching
+    # {User.find_by_nuid}'s missing-resource convention).
+    #
+    # For runtime page listing (e.g. manifest assembly) prefer {.file_sets},
+    # which needs no completion and carries each page's assets; this read is
+    # the preservation-record view.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Hash, nil] the `"work"` object, already unwrapped: `{ "id",
+    #   "mets" => { "created_at_iso", "agent", "files", "structure_label",
+    #   "pages" => [...] } }` — or `nil` when the Work has no METS yet
+    #   (never completed) or does not exist.
+    #
+    # @example
+    #   AtlasRb::Work.mets("w-789").mets.pages.map(&:order)
+    #   # => [1, 2, 3]
+    def self.mets(id, nuid: nil, on_behalf_of: nil)
+      response = connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/mets')
+      return nil if response.status == 404
+
+      AtlasRb::Mash.new(JSON.parse(response.body))["work"]
+    end
+
     # Fetch the Work's MODS representation in the requested format.
     #
     # @param id [String] the Work ID.
