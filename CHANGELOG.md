@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.3.3
+
+### Added — multipage bindings (FileSet ordinality)
+
+Bindings for Atlas's FileSet-ordinality surface (Atlas v0.6.53) — the
+primitive behind multipage Works (postcards, scanned books, photo albums):
+one Work, N ordered page FileSets.
+
+```ruby
+# Ordered create — one FileSet per page
+page = AtlasRb::FileSet.create("w-789", "image", position: 1)
+AtlasRb::FileSet.update(page["id"], "/tmp/page-001.tiff")
+
+# Ordered listing — the read a IIIF manifest assembler needs
+AtlasRb::Work.file_sets("w-789")
+# => [{ "noid" => ..., "position" => 1, "assets" => [...] }, ...]
+
+# Preservation-record view — the Work-level METS physical structMap
+AtlasRb::Work.mets("w-789").mets.pages.map(&:order)
+# => [1, 2, 3]
+```
+
+- `FileSet.create` gains an optional `position:` kwarg — 1-based page
+  order, set at create time only; omitted = unordered (every existing
+  call is unaffected). Sequence validation (contiguity, uniqueness) stays
+  the caller's job — Atlas stores what it is given.
+- `Work.file_sets` wraps `GET /works/<id>/file_sets`: one entry per
+  page-bearing FileSet, `position` ascending with unordered FileSets
+  last, each nesting its downloadable assets (content Blobs + per-page
+  IIIF Delegates). **Unpaginated** by design — the whole page sequence
+  arrives in one call. Grouped sibling of `.assets`, which flattens.
+- `Work.mets` wraps `GET /works/<id>/mets`: the Work-level METS JSON
+  projection; `mets.pages` carries the preserved page order. Atlas builds
+  the document at `Work.complete`, so a never-completed Work has no METS
+  yet — the binding returns `nil` on the 404, matching
+  `User.find_by_nuid`'s convention.
+
 ## 1.3.2
 
 ### Added — `AtlasRb::User` (read-only user directory)
