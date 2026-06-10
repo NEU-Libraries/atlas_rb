@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.3.2
+
+### Added — `AtlasRb::User` (read-only user directory)
+
+A user-context binding for Atlas's user directory endpoints — recipient
+typeahead and NUID → name resolution for any surface that today renders a
+bare NUID (User Inbox sender display, Audit History chips, Rights history).
+
+```ruby
+AtlasRb::User.search("jan", nuid: "000000002")
+# => [{ "nuid" => "001234567", "name" => "Doe, Jane" }, ...]
+
+AtlasRb::User.find_by_nuid("001234567")
+# => { "nuid" => "001234567", "name" => "Doe, Jane" }
+
+AtlasRb::User.resolve(["001234567", "007654321"])
+# => one entry per resolvable NUID, ordered by name
+```
+
+- `search` is the typeahead: case-insensitive match on name, prefix match
+  on NUID. Atlas caps the list at 10 and orders by name.
+- `resolve` batch-resolves up to 100 NUIDs in one round-trip (an inbox
+  page of senders in one call). Unresolvable NUIDs are dropped — callers
+  index by `nuid`.
+- `find_by_nuid` resolves a single NUID; returns `nil` on Atlas's 404
+  (unknown NUID, or one held by an excluded role — indistinguishable on
+  the wire by design).
+- Minimal disclosure is enforced server-side: entries carry `nuid` +
+  `name` only, and `anonymous` / `guest` / `system` rows never appear.
+- Deliberately **not** under `AtlasRb::System` — this is an acting-user
+  capability on the ordinary `ATLAS_TOKEN` + `User:` header pairing; the
+  `System` namespace stays reserved for system-token calls.
+
 ## 1.3.1
 
 ### Added — `AtlasRb::Resource.mods_versions` / `mods_version` (MODS version history)
