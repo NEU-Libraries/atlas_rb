@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.5
+
+### Added — `Compilation.list(q:)` title filter
+
+`Compilation.list` accepts `q:`, a case-insensitive title substring
+filter (Atlas v0.6.60, `GET /compilations?q=<term>`). The filter applies
+before pagination, so the returned `"pagination"` block describes the
+filtered result. Backs the Cerberus Add-to-set typeahead.
+
+```ruby
+AtlasRb::Compilation.list(q: "course", nuid: "000000002")
+```
+
 ## 1.3.4
 
 ### Added — Compilation (DRS "Sets") bindings

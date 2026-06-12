@@ -57,10 +57,13 @@ module AtlasRb
     #
     # Defaults to the acting user's own Sets. Pass `owner:` to list another
     # user's — that is admin-only and raises {AtlasRb::ForbiddenError} for
-    # anyone else. There is no public browse surface.
+    # anyone else. There is no public browse surface. Pass `q:` to narrow
+    # by case-insensitive title substring; the filter applies before
+    # pagination, so the `"pagination"` block describes the filtered result.
     #
     # @param owner [String, nil] NUID whose Sets to list (admin-only when it
     #   isn't the acting user). Omit for "my Sets".
+    # @param q [String, nil] case-insensitive title substring filter.
     # @param page [Integer, nil] 1-indexed page number.
     # @param per_page [Integer, nil] page size override.
     # @param nuid [String, nil] optional acting user's NUID, forwarded as the
@@ -78,9 +81,13 @@ module AtlasRb
     #
     # @example Another user's Sets (admin)
     #   AtlasRb::Compilation.list(owner: "000000002", nuid: "000000004")
-    def self.list(owner: nil, page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
+    #
+    # @example Title typeahead
+    #   AtlasRb::Compilation.list(q: "course", nuid: "000000002")
+    def self.list(owner: nil, q: nil, page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
       params = {}
       params[:owner]    = owner    if owner
+      params[:q]        = q        if q
       params[:page]     = page     if page
       params[:per_page] = per_page if per_page
       AtlasRb::Mash.new(JSON.parse(
