@@ -123,5 +123,42 @@ module AtlasRb
         multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)&.body
       ))
     end
+
+    # Persist the per-page IIIF image-service pointer on a FileSet.
+    #
+    # Purpose-specific PATCH for the `service_file` Delegate role — the
+    # Cantaloupe image-service base URI for this page's JP2, from which a
+    # viewer derives any size on demand via `info.json`. Atlas upserts the
+    # Delegate (re-setting never mints a duplicate), nesting it in a
+    # `:derivative` FileSet under the page; it surfaces in the ordered
+    # page listing ({Work.file_sets}) for IIIF manifest assembly.
+    #
+    # Sibling of {Work.set_thumbnails} / {Work.set_image_derivatives} —
+    # a machine-set IIIF URI, not user-authored descriptive content.
+    #
+    # @param id [String] the FileSet ID.
+    # @param uri [String] the IIIF image-service base URI for the page.
+    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
+    #   `User:` header. Required for cerberus-token requests; legacy bearer
+    #   tokens still resolve without it.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [AtlasRb::Mash] the updated `"file_set"` payload.
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
+    #
+    # @example
+    #   AtlasRb::FileSet.set_iiif_service(
+    #     "fs-001",
+    #     "https://iiif.example.edu/iiif/3/abc.jp2"
+    #   )
+    def self.set_iiif_service(id, uri, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .patch(ROUTE + id + "/iiif_service", JSON.dump({ uri: uri }))&.body
+      ))
+    end
   end
 end
