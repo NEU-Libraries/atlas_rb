@@ -101,14 +101,48 @@ module AtlasRb
     end
   end
 
-  # Raised when Atlas refuses a re-parent or linked-member write with an
-  # HTTP `403`, whose envelope is `{ "error", "action", "subject" }`. Lets
-  # callers distinguish "you may not do this" from a structural rejection
-  # ({ReparentError} / {LinkedMemberError}) or a not-found.
+  # Raised when Atlas rejects a Compilation (Set) write with a `422`
+  # carrying a machine-readable `error` discriminator — a blank title on
+  # create/update (`invalid_record`), or a membership add whose noid does
+  # not resolve to the expected type (a Community where a Collection is
+  # required, an unknown id, a Collection where a Work is required).
   #
-  # @note Scoped to the re-parent / linked-member write paths — `403`s on
-  #   other endpoints still surface as raw responses for the caller's own
-  #   rescue layer, unchanged.
+  # The Compilation sibling of {LinkedMemberError}; same shape, same
+  # rationale (the binding's `["compilation"]` unwrap would otherwise
+  # discard the envelope on a non-2xx).
+  #
+  #   rescue AtlasRb::CompilationError => e
+  #     flash.now[:alert] = e.message
+  #
+  # @note Authorization failures surface as {ForbiddenError} (HTTP 403).
+  class CompilationError < Error
+    # @return [String, nil] the machine-readable error code from the
+    #   envelope (currently `"invalid_record"`).
+    attr_reader :code
+
+    # @return [String, nil] the rejected resource's ID, from the envelope
+    #   (may be nil — validation envelopes don't always carry one).
+    attr_reader :resource_id
+
+    # @param message [String] human-readable rejection description.
+    # @param code [String, nil] the envelope's `error` discriminator.
+    # @param resource_id [String, nil] the rejected resource's ID.
+    def initialize(message, code: nil, resource_id: nil)
+      super(message)
+      @code = code
+      @resource_id = resource_id
+    end
+  end
+
+  # Raised when Atlas refuses a re-parent, linked-member, or Compilation
+  # request with an HTTP `403`, whose envelope is
+  # `{ "error", "action", "subject" }`. Lets callers distinguish "you may
+  # not do this" from a structural rejection ({ReparentError} /
+  # {LinkedMemberError} / {CompilationError}) or a not-found.
+  #
+  # @note Scoped to the re-parent / linked-member write paths and the
+  #   Compilation surface — `403`s on other endpoints still surface as raw
+  #   responses for the caller's own rescue layer, unchanged.
   class ForbiddenError < Error
     # @return [String, nil] the envelope's `error` value.
     attr_reader :code

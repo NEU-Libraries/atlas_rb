@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.3.4
+
+### Added — Compilation (DRS "Sets") bindings
+
+Bindings for Atlas's Compilation surface (Atlas v0.6.57) — personal,
+curated, recipe-based groupings of Works and Collections, the persistence
+behind the Cerberus Sets UI.
+
+```ruby
+set = AtlasRb::Compilation.create("Course readings", nuid: "000000002")
+
+# Recipe lines — each mutation returns the full updated compilation
+AtlasRb::Compilation.add_included_collection(set["id"], "col-456", nuid: "000000002")
+AtlasRb::Compilation.add_included_work(set["id"], "w-789", nuid: "000000002")
+AtlasRb::Compilation.add_exclusion(set["id"], "w-790", nuid: "000000002")   # set aside
+AtlasRb::Compilation.remove_exclusion(set["id"], "w-790", nuid: "000000002") # put back
+
+# Make public, resolve the recipe
+AtlasRb::Compilation.update(set["id"],
+                            permissions: { read: ["public"], edit: [], edit_users: [] },
+                            nuid: "000000002")
+AtlasRb::Compilation.contents(set["id"]).contents.map(&:noid)
+```
+
+- `Compilation.create / find / update / destroy / list` — owner-scoped
+  CRUD. The depositor is stamped server-side from the acting NUID and is
+  immutable; `list(owner:)` (cross-owner) is admin-only. `update` takes
+  `title:` / `description:` / `permissions:` (the ACL hash replaces all
+  three grant lists; ACL changes are audited server-side, no-ops
+  suppressed).
+- Six membership calls (`add/remove_included_collection`,
+  `add/remove_included_work`, `add/remove_exclusion`) — each returns the
+  updated `"compilation"` object so chip counts refresh without a
+  follow-up `find`. Adds and removes are idempotent; the type rules
+  (Works and Collections only, no Communities) are enforced by Atlas.
+- `Compilation.contents` wraps `GET /compilations/<id>/contents` — the
+  recipe resolved to `find_many`-style digests with Solr-side pagination
+  (`{ total, page, per_page, pages }`). Included for completeness; CERES
+  hits the endpoint directly and Cerberus resolves contents via its own
+  Blacklight query.
+- New `AtlasRb::CompilationError` (422 — blank title, wrong-type or
+  unknown membership noid), the Compilation sibling of
+  `LinkedMemberError`. `AtlasRb::ForbiddenError` now also covers 403s on
+  the Compilation surface, so a non-grantee reading a private Set gets a
+  typed refusal instead of a swallowed `nil`.
+
 ## 1.3.3
 
 ### Added — multipage bindings (FileSet ordinality)

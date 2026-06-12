@@ -15,30 +15,34 @@ module AtlasRb
     # {RaiseOnStaleResource}.
     #
     # It is intentionally narrow — it only fires on the re-parent
-    # (`.../parent`) and linked-member (`.../linked_members...`) write paths,
-    # and only on `403` / `422` bodies carrying an `error` discriminator.
+    # (`.../parent`) and linked-member (`.../linked_members...`) write paths
+    # and the Compilation surface (`/compilations...`), and only on
+    # `403` / `422` bodies carrying an `error` discriminator.
     # Everything else (other paths, other statuses, a `422` whose body uses a
     # different discriminator such as `tombstone`'s `code: "has_live_children"`)
     # passes through untouched, so atlas_rb stays a thin Faraday binding that
     # translates only the wire signals callers genuinely need to discriminate.
     #
     # Mapping:
-    # - `403` (either path) → {AtlasRb::ForbiddenError} (`error`/`action`/`subject`)
+    # - `403` (any covered path) → {AtlasRb::ForbiddenError} (`error`/`action`/`subject`)
     # - `422` on `.../parent` → {AtlasRb::ReparentError} (`error`/`resource_id`)
     # - `422` on `.../linked_members...` → {AtlasRb::LinkedMemberError}
+    # - `422` on `/compilations...` → {AtlasRb::CompilationError}
     class RaiseOnResourceError < Faraday::Middleware
       # @param env [Faraday::Env] the completed response environment.
-      # @raise [AtlasRb::ForbiddenError] on a 403 to a re-parent / linked-member path.
+      # @raise [AtlasRb::ForbiddenError] on a 403 to a covered path.
       # @raise [AtlasRb::ReparentError] on a 422 to a re-parent path.
       # @raise [AtlasRb::LinkedMemberError] on a 422 to a linked-member path.
+      # @raise [AtlasRb::CompilationError] on a 422 to a Compilation path.
       # @return [void]
       def on_complete(env)
         return unless env.status == 403 || env.status == 422
 
-        path     = env.url&.path.to_s
-        reparent = path.end_with?("/parent")
-        linked   = path.include?("/linked_members")
-        return unless reparent || linked
+        path        = env.url&.path.to_s
+        reparent    = path.end_with?("/parent")
+        linked      = path.include?("/linked_members")
+        compilation = path.start_with?("/compilations")
+        return unless reparent || linked || compilation
 
         body = parse_json(env.body)
         return unless body.is_a?(Hash) && body["error"]
@@ -56,9 +60,15 @@ module AtlasRb
             code: body["error"],
             resource_id: body["resource_id"]
           )
-        else
+        elsif linked
           raise AtlasRb::LinkedMemberError.new(
             body["message"] || "Atlas rejected the linked-member write",
+            code: body["error"],
+            resource_id: body["resource_id"]
+          )
+        else
+          raise AtlasRb::CompilationError.new(
+            body["message"] || "Atlas rejected the compilation write",
             code: body["error"],
             resource_id: body["resource_id"]
           )
