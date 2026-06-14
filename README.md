@@ -25,12 +25,13 @@ Then `bundle install`, or install standalone with `gem install atlas_rb`.
 
 ### Environment variables
 
-Every regular-path request reads two environment variables:
+Every regular-path request reads these environment variables:
 
 | Variable      | Purpose                                                       |
 |---------------|---------------------------------------------------------------|
 | `ATLAS_URL`   | Base URL of the Atlas API (e.g. `https://atlas.example.edu`). |
-| `ATLAS_TOKEN` | Bearer token used in the `Authorization` header.              |
+| `ATLAS_TOKEN` | Cerberus-relay bearer token used in the `Authorization` header (relay mode). |
+| `ATLAS_JWT`   | *Optional.* A personal-access JWT minted by Atlas's `POST /nuid`. When set, switches to [BYO-JWT mode](#byo-jwt-mode-standalone-scripts). |
 
 ```ruby
 ENV["ATLAS_URL"]   = "https://atlas.example.edu"
@@ -75,6 +76,35 @@ AtlasRb::Work.find("w-789", nuid: "X")
 
 If neither the call site nor the registered default supplies a value,
 no header is sent (legacy bearer-only path preserved).
+
+### BYO-JWT mode (standalone scripts)
+
+The relay path above is what a Rails host (Cerberus) uses: a shared
+`ATLAS_TOKEN` plus a `User: NUID` header naming the acting person. For
+**standalone scripts** — a librarian automating their own workflow — Atlas
+also accepts a *personal-access JWT*, minted by Cerberus post-SSO via
+`POST /nuid` and handed to the user. Set it as `ATLAS_JWT` and the gem
+switches transport modes:
+
+```ruby
+ENV["ATLAS_URL"] = "https://atlas.example.edu"
+ENV["ATLAS_JWT"] = "<token minted for you by Cerberus>"   # 1-week TTL
+
+# Identity is carried by the token — no nuid plumbing needed:
+AtlasRb::Work.find("w-789")
+```
+
+In BYO-JWT mode:
+
+- The JWT is the bearer, **taking precedence over `ATLAS_TOKEN`**.
+- **No `User:` header is sent** — the token already encodes the acting
+  user, and any `nuid:` kwarg or `default_nuid` is ignored on this path.
+- **`On-Behalf-Of` is suppressed** — acting-as is a Cerberus-relay-only
+  concept; Atlas rejects it on the JWT path with a 403. Any `on_behalf_of:`
+  kwarg or `default_on_behalf_of` is dropped.
+
+To rotate or revoke, ask Cerberus to regenerate your token (Atlas rotates
+the user's `jti`, invalidating outstanding tokens — single-token model).
 
 ### System-path credentials
 

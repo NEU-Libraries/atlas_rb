@@ -32,10 +32,15 @@ require_relative "atlas_rb/audit_event"
 #
 # ## Configuration
 #
-# Two environment variables drive every request:
+# Environment variables drive every request:
 #
 # - `ATLAS_URL`   — base URL of the Atlas API (e.g. `https://atlas.example.edu`).
-# - `ATLAS_TOKEN` — bearer token sent in the `Authorization` header.
+# - `ATLAS_TOKEN` — Cerberus-relay bearer token sent in the `Authorization`
+#   header on the default path.
+# - `ATLAS_JWT`   — optional personal-access JWT (minted by Atlas's
+#   `POST /nuid`). When set, the transport runs in bring-your-own-JWT mode:
+#   the JWT is the bearer and no `User:` / `On-Behalf-Of:` headers are sent.
+#   See {AtlasRb::FaradayHelper} for the mode semantics.
 #
 # {AtlasRb::Authentication} additionally accepts an NUID (Northeastern
 # University ID) which is forwarded in a `User: NUID <nuid>` header so the

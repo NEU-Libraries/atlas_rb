@@ -3,18 +3,32 @@
 module AtlasRb
   # HTTP transport helpers shared by every resource class.
   #
-  # Every Atlas request reads two environment variables:
+  # Every Atlas request reads these environment variables:
   #
   # - `ATLAS_URL`   — base URL of the Atlas API (e.g. `https://atlas.example.edu`).
-  # - `ATLAS_TOKEN` — bearer token used in the `Authorization` header.
+  # - `ATLAS_TOKEN` — Cerberus-relay bearer token used in the `Authorization`
+  #   header on the default (relay) path.
+  # - `ATLAS_JWT`   — *optional* personal-access JWT (minted by Atlas's
+  #   `POST /nuid`, Cerberus-delegated post-SSO). When set, it switches the
+  #   transport into **bring-your-own-JWT mode** (see below).
   #
-  # Most calls also identify the acting user via a `User: NUID <nuid>` header,
-  # and optionally an `On-Behalf-Of: NUID <nuid>` header for acting-as / view-as
-  # flows. When `nuid` / `on_behalf_of` are omitted (positional arg `nil`,
-  # kwarg `nil`), the helper falls through to {AtlasRb.config}'s
+  # ## Two transport modes
+  #
+  # **Relay mode (default, `ATLAS_JWT` unset).** Authenticates with
+  # `ATLAS_TOKEN` and identifies the acting user via a `User: NUID <nuid>`
+  # header, optionally an `On-Behalf-Of: NUID <nuid>` header for acting-as /
+  # view-as flows. When `nuid` / `on_behalf_of` are omitted (positional arg
+  # `nil`, kwarg `nil`), the helper falls through to {AtlasRb.config}'s
   # `default_nuid` / `default_on_behalf_of` callables — host applications wire
   # those up to their request-scoped `Current.*` source. Caller-passed values
-  # always win over the configured defaults.
+  # always win over the configured defaults. This is the path Cerberus uses.
+  #
+  # **BYO-JWT mode (`ATLAS_JWT` set).** Authenticates with the JWT, which
+  # already encodes the acting user — so **no `User:` header is sent**, and
+  # `On-Behalf-Of` is **suppressed** (Atlas rejects acting-as on the JWT path
+  # with a 403; acting-as is a relay-only concept). `ATLAS_JWT` takes
+  # precedence over `ATLAS_TOKEN`. This is the standalone-script path: a
+  # librarian exports their minted token and runs headless against the API.
   #
   # The module is mixed in via `extend`, so its methods become class methods on
   # the host (e.g. `AtlasRb::Work.connection({})`).
@@ -43,15 +57,7 @@ module AtlasRb
     # @example Fetching a community
     #   AtlasRb::Community.connection({}).get('/communities/abc123')
     def connection(params, nuid=nil, on_behalf_of: nil, idempotency_key: nil)
-      nuid         ||= AtlasRb.config.default_nuid&.call
-      on_behalf_of ||= AtlasRb.config.default_on_behalf_of&.call
-
-      headers = {
-        "Content-Type" => "application/json",
-        "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}"
-      }
-      headers["User"]            = "NUID #{nuid}" if nuid
-      headers["On-Behalf-Of"]    = "NUID #{on_behalf_of}" if on_behalf_of
+      headers = auth_headers(nuid, on_behalf_of).merge("Content-Type" => "application/json")
       headers["Idempotency-Key"] = idempotency_key if idempotency_key
 
       Faraday.new(
@@ -91,14 +97,7 @@ module AtlasRb
     #   }
     #   AtlasRb::Blob.multipart.post('/files/', payload)
     def multipart(nuid=nil, on_behalf_of: nil, idempotency_key: nil)
-      nuid         ||= AtlasRb.config.default_nuid&.call
-      on_behalf_of ||= AtlasRb.config.default_on_behalf_of&.call
-
-      headers = {
-        "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}"
-      }
-      headers["User"]            = "NUID #{nuid}" if nuid
-      headers["On-Behalf-Of"]    = "NUID #{on_behalf_of}" if on_behalf_of
+      headers = auth_headers(nuid, on_behalf_of)
       headers["Idempotency-Key"] = idempotency_key if idempotency_key
 
       Faraday.new(
@@ -148,6 +147,34 @@ module AtlasRb
         f.response :follow_redirects
         f.adapter Faraday.default_adapter
       end
+    end
+
+    private
+
+    # Build the auth + identity headers shared by {#connection} and
+    # {#multipart}. BYO-JWT mode (`ATLAS_JWT` set) sends only the bearer — the
+    # token carries the acting user, so no `User:` header, and `On-Behalf-Of`
+    # is suppressed (Atlas 403s acting-as on the JWT path). Relay mode uses
+    # `ATLAS_TOKEN` and names the acting user, falling through to the
+    # configured `default_nuid` / `default_on_behalf_of` callables when the
+    # caller passes neither.
+    def auth_headers(nuid, on_behalf_of)
+      jwt = ENV.fetch("ATLAS_JWT", nil)
+      return { "Authorization" => "Bearer #{jwt}" } if jwt
+
+      relay_headers(nuid, on_behalf_of)
+    end
+
+    # Relay-path headers: ATLAS_TOKEN bearer + the acting-user identity headers,
+    # falling through to the configured default_nuid / default_on_behalf_of.
+    def relay_headers(nuid, on_behalf_of)
+      nuid         ||= AtlasRb.config.default_nuid&.call
+      on_behalf_of ||= AtlasRb.config.default_on_behalf_of&.call
+
+      headers = { "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}" }
+      headers["User"]         = "NUID #{nuid}" if nuid
+      headers["On-Behalf-Of"] = "NUID #{on_behalf_of}" if on_behalf_of
+      headers
     end
   end
 end
