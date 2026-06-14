@@ -106,6 +106,39 @@ In BYO-JWT mode:
 To rotate or revoke, ask Cerberus to regenerate your token (Atlas rotates
 the user's `jti`, invalidating outstanding tokens — single-token model).
 
+### Relay-signing mode (the `ATLAS_TOKEN` replacement)
+
+The default relay authenticates with the shared `ATLAS_TOKEN` and *asserts* the
+acting user via a `User: NUID` header. Relay-signing replaces that with a
+**proven** identity: the relay **signs** a short-lived assertion with its own
+private key (`iss=cerberus`, `aud=atlas`, `sub` = the acting nuid, ES256), which
+Atlas verifies against the matching public key. No shared secret, no asserted
+header.
+
+Configure a signing key (and the `kid` Atlas indexes its public key by) — value
+or callable, so a Rails host reads it from credentials at request time:
+
+```ruby
+AtlasRb.configure do |config|
+  config.assertion_signing_key = -> { Rails.application.credentials.cerberus_signing_key }
+  config.assertion_signing_kid = -> { Rails.application.credentials.cerberus_signing_kid }
+end
+```
+
+When a signing key is configured, the regular relay (`connection` / `multipart`)
+signs instead of sending `ATLAS_TOKEN` + `User:`. Otherwise it behaves exactly as
+before — so signing **coexists with `ATLAS_TOKEN` during cutover** (turn it on by
+configuring the key; roll back by clearing it).
+
+Two carve-outs keep the boundaries safe:
+
+- **Acting-as auto-falls-back to the `ATLAS_TOKEN` relay.** An `on_behalf_of`
+  request is *not* signed — Atlas rejects `On-Behalf-Of` on the assertion path
+  (403) until a signed `obo` claim ships, so the gem keeps acting-as on the
+  legacy relay rather than letting it 403.
+- **`ATLAS_JWT` still wins.** A personal token (BYO-JWT) takes precedence over
+  relay-signing.
+
 ### System-path credentials
 
 Calls under `AtlasRb::System::*` (currently just SSO user provisioning)

@@ -44,5 +44,28 @@ module AtlasRb
     # @return [Proc, nil] callable returning the on-behalf-of NUID, or nil
     #   to send no `On-Behalf-Of:` header.
     attr_accessor :default_on_behalf_of
+
+    # Relay signing (the cerberus_token replacement). When set, the regular
+    # relay path *signs* a short-lived assertion (ES256, `sub` = acting nuid)
+    # instead of sending `ATLAS_TOKEN` + a `User:` header — identity becomes
+    # proven, not asserted. Leave nil (the default) to keep the legacy relay.
+    #
+    # Accepts either a value or a callable (resolved per request, so a Rails
+    # host can read it from request-scoped state / credentials). The value may
+    # be a PEM string or an `OpenSSL::PKey`; a PEM is parsed for you.
+    #
+    # @example Rails host (initializer), reading the EC private key from credentials
+    #   AtlasRb.configure do |config|
+    #     config.assertion_signing_key = -> { Rails.application.credentials.cerberus_signing_key }
+    #     config.assertion_signing_kid = -> { Rails.application.credentials.cerberus_signing_kid }
+    #   end
+    #
+    # @return [String, OpenSSL::PKey, Proc, nil] EC private key (PEM/key/callable), or nil.
+    attr_accessor :assertion_signing_key
+
+    # @return [String, Proc, nil] the `kid` stamped in the assertion header so
+    #   Atlas selects the matching public key. Value or callable. Required when
+    #   {#assertion_signing_key} is set.
+    attr_accessor :assertion_signing_kid
   end
 end

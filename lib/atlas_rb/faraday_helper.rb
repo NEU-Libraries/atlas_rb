@@ -30,9 +30,27 @@ module AtlasRb
   # precedence over `ATLAS_TOKEN`. This is the standalone-script path: a
   # librarian exports their minted token and runs headless against the API.
   #
+  # **Relay-signing mode ({AtlasRb.config#assertion_signing_key} set).** The
+  # cryptographic replacement for the `ATLAS_TOKEN` relay: instead of a shared
+  # secret + an asserted `User:` header, the regular relay path **signs** a
+  # short-lived assertion (ES256, `iss=cerberus`, `aud=atlas`, `sub` = the
+  # acting nuid) with Cerberus's private key — Atlas verifies it with the
+  # public key. No `User:` header; identity is the proven `sub`. **Acting-as
+  # auto-falls-back to the legacy relay**: an `on_behalf_of` request is NOT
+  # signed (Atlas 403s `On-Behalf-Of` on the assertion path until a signed
+  # `obo` claim ships), so the boundary cannot be violated by a caller. Off
+  # unless a signing key is configured (so it coexists with `ATLAS_TOKEN`
+  # during cutover). `ATLAS_JWT`, if set, still wins over signing.
+  #
   # The module is mixed in via `extend`, so its methods become class methods on
   # the host (e.g. `AtlasRb::Work.connection({})`).
   module FaradayHelper
+    # Wire contract Atlas enforces for relay-signing assertions (see Atlas
+    # ApplicationController#verify_cerberus_assertion). iss/aud are fixed; the
+    # short TTL bounds replay (Atlas allows 30s leeway on exp).
+    ASSERTION_ISSUER   = "cerberus"
+    ASSERTION_AUDIENCE = "atlas"
+    ASSERTION_TTL      = 30 # seconds
     # Build a JSON-content Faraday connection to the Atlas API.
     #
     # @param params [Hash] query-string / body params to attach to the request.
@@ -151,30 +169,77 @@ module AtlasRb
 
     private
 
-    # Build the auth + identity headers shared by {#connection} and
-    # {#multipart}. BYO-JWT mode (`ATLAS_JWT` set) sends only the bearer — the
-    # token carries the acting user, so no `User:` header, and `On-Behalf-Of`
-    # is suppressed (Atlas 403s acting-as on the JWT path). Relay mode uses
-    # `ATLAS_TOKEN` and names the acting user, falling through to the
-    # configured `default_nuid` / `default_on_behalf_of` callables when the
-    # caller passes neither.
+    # Build the auth + identity headers shared by {#connection} and {#multipart}.
+    # Precedence: ATLAS_JWT (BYO-JWT) > relay-signing > ATLAS_TOKEN relay. The
+    # acting nuid / on_behalf_of fall through to the configured `default_nuid` /
+    # `default_on_behalf_of` callables here, once, for whichever mode applies.
     def auth_headers(nuid, on_behalf_of)
       jwt = ENV.fetch("ATLAS_JWT", nil)
       return { "Authorization" => "Bearer #{jwt}" } if jwt
 
-      relay_headers(nuid, on_behalf_of)
-    end
-
-    # Relay-path headers: ATLAS_TOKEN bearer + the acting-user identity headers,
-    # falling through to the configured default_nuid / default_on_behalf_of.
-    def relay_headers(nuid, on_behalf_of)
       nuid         ||= AtlasRb.config.default_nuid&.call
       on_behalf_of ||= AtlasRb.config.default_on_behalf_of&.call
 
+      signed_relay_headers(nuid, on_behalf_of) || relay_headers(nuid, on_behalf_of)
+    end
+
+    # A signed-assertion Authorization header (sub = acting nuid), or nil to
+    # defer to the legacy relay. nil when signing isn't configured, there is no
+    # acting nuid to put in `sub`, or this is an acting-as request — On-Behalf-Of
+    # stays on the cerberus_token relay (Atlas 403s it on the assertion path),
+    # so the boundary can't be violated by a caller.
+    def signed_relay_headers(nuid, on_behalf_of)
+      return nil unless nuid && on_behalf_of.nil?
+
+      key = assertion_signing_key
+      return nil unless key
+
+      { "Authorization" => "Bearer #{signed_assertion(nuid.to_s, key)}" }
+    end
+
+    # Legacy relay headers: ATLAS_TOKEN bearer + acting-user identity headers.
+    # `nuid` / `on_behalf_of` are already resolved by {#auth_headers}.
+    def relay_headers(nuid, on_behalf_of)
       headers = { "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}" }
       headers["User"]         = "NUID #{nuid}" if nuid
       headers["On-Behalf-Of"] = "NUID #{on_behalf_of}" if on_behalf_of
       headers
+    end
+
+    # Mint a Cerberus relay assertion for `nuid`, signed ES256 with `key`. The
+    # `kid` header tells Atlas which public key to verify against; iss/aud are
+    # the fixed contract; the short TTL bounds replay; `jti` is forward-compat
+    # for an Atlas-side one-time cache.
+    def signed_assertion(nuid, key)
+      now = Time.now.to_i
+      payload = {
+        "iss" => ASSERTION_ISSUER,
+        "aud" => ASSERTION_AUDIENCE,
+        "sub" => nuid,
+        "iat" => now,
+        "exp" => now + ASSERTION_TTL,
+        "jti" => SecureRandom.uuid
+      }
+      JWT.encode(payload, key, "ES256", { kid: assertion_signing_kid })
+    end
+
+    # Resolve the configured signing key to an OpenSSL::PKey, or nil if signing
+    # is not configured. Accepts a callable (resolved per request), a PEM
+    # string (parsed), or an already-built key.
+    def assertion_signing_key
+      raw = config_value(AtlasRb.config.assertion_signing_key)
+      return nil if raw.nil?
+
+      raw.is_a?(OpenSSL::PKey::PKey) ? raw : OpenSSL::PKey.read(raw)
+    end
+
+    def assertion_signing_kid
+      config_value(AtlasRb.config.assertion_signing_kid)
+    end
+
+    # Config slots may hold a value or a callable resolved at request time.
+    def config_value(value)
+      value.respond_to?(:call) ? value.call : value
     end
   end
 end

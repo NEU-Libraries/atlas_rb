@@ -6,10 +6,12 @@ PATH
       faraday-follow_redirects (~> 0.3.0)
       faraday-multipart (~> 1)
       hashie (~> 5.0)
+      jwt (~> 2.7)
 
 GEM
   remote: https://rubygems.org/
   specs:
+    base64 (0.3.0)
     diff-lcs (1.6.1)
     faraday (2.14.2)
       faraday-net_http (>= 2.0, < 3.5)
@@ -24,6 +26,8 @@ GEM
     hashie (5.1.0)
       logger
     json (2.19.9)
+    jwt (2.10.3)
+      base64
     logger (1.7.0)
     multipart-post (2.4.1)
     net-http (0.9.1)
