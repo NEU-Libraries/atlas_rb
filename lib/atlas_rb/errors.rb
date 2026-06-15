@@ -164,4 +164,11 @@ module AtlasRb
       @subject = subject
     end
   end
+
+  # Raised when the transport has no way to authenticate a relay request:
+  # neither `ATLAS_JWT` (BYO-JWT mode) nor a signing key
+  # ({AtlasRb.config#assertion_signing_key}, relay-signing mode) is configured.
+  # This is a host-misconfiguration error surfaced at request-build time, not a
+  # wire response — fix the configuration rather than rescuing it.
+  class ConfigurationError < Error; end
 end

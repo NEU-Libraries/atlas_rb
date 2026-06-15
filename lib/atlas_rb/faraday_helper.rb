@@ -6,45 +6,35 @@ module AtlasRb
   # Every Atlas request reads these environment variables:
   #
   # - `ATLAS_URL`   — base URL of the Atlas API (e.g. `https://atlas.example.edu`).
-  # - `ATLAS_TOKEN` — Cerberus-relay bearer token used in the `Authorization`
-  #   header on the default (relay) path.
   # - `ATLAS_JWT`   — *optional* personal-access JWT (minted by Atlas's
   #   `POST /nuid`, Cerberus-delegated post-SSO). When set, it switches the
   #   transport into **bring-your-own-JWT mode** (see below).
   #
   # ## Two transport modes
   #
-  # **Relay mode (default, `ATLAS_JWT` unset).** Authenticates with
-  # `ATLAS_TOKEN` and identifies the acting user via a `User: NUID <nuid>`
-  # header, optionally an `On-Behalf-Of: NUID <nuid>` header for acting-as /
-  # view-as flows. When `nuid` / `on_behalf_of` are omitted (positional arg
-  # `nil`, kwarg `nil`), the helper falls through to {AtlasRb.config}'s
-  # `default_nuid` / `default_on_behalf_of` callables — host applications wire
-  # those up to their request-scoped `Current.*` source. Caller-passed values
-  # always win over the configured defaults. This is the path Cerberus uses.
+  # **Relay-signing mode (default).** The regular relay path **signs** a
+  # short-lived assertion (ES256, `iss=cerberus`, `aud=atlas`, `sub` = the
+  # acting nuid) with Cerberus's private key — Atlas verifies it against the
+  # matching public key. No `User:` header; identity is the proven `sub`.
+  # **Acting-as rides a signed `obo` claim** inside the assertion (the target
+  # can't be forged onto a stolen assertion; Atlas admin-gates the operator and
+  # ignores any header obo on this path). When `nuid` / `on_behalf_of` are
+  # omitted (positional arg `nil`, kwarg `nil`), the helper falls through to
+  # {AtlasRb.config}'s `default_nuid` / `default_on_behalf_of` callables — host
+  # applications wire those up to their request-scoped `Current.*` source;
+  # caller-passed values always win. The key is configured via
+  # {AtlasRb.config#assertion_signing_key} / `assertion_signing_kid`. This is
+  # the path Cerberus uses.
   #
   # **BYO-JWT mode (`ATLAS_JWT` set).** Authenticates with the JWT, which
   # already encodes the acting user — so **no `User:` header is sent**, and
   # `On-Behalf-Of` is **suppressed** (Atlas rejects acting-as on the JWT path
   # with a 403; acting-as is a relay-only concept). `ATLAS_JWT` takes
-  # precedence over `ATLAS_TOKEN`. This is the standalone-script path: a
+  # precedence over relay-signing. This is the standalone-script path: a
   # librarian exports their minted token and runs headless against the API.
   #
-  # **Relay-signing mode ({AtlasRb.config#assertion_signing_key} set).** The
-  # cryptographic replacement for the `ATLAS_TOKEN` relay: instead of a shared
-  # secret + an asserted `User:` header, the regular relay path **signs** a
-  # short-lived assertion (ES256, `iss=cerberus`, `aud=atlas`, `sub` = the
-  # acting nuid) with Cerberus's private key — Atlas verifies it with the
-  # public key. No `User:` header; identity is the proven `sub`. **Acting-as
-  # rides a signed `obo` claim** inside the assertion (the target can't be forged
-  # onto a stolen assertion; Atlas admin-gates the operator and ignores any
-  # header obo on this path) — it is no longer punted to the legacy relay. Off
-  # unless a signing key is configured (so it coexists with `ATLAS_TOKEN`
-  # during cutover). `ATLAS_JWT`, if set, still wins over signing.
-  #
-  # Requires an Atlas that verifies the signed `obo` claim (the signed-obo
-  # release); against an older Atlas an `obo` would be silently ignored, so
-  # don't enable signing for acting-as traffic until Atlas is on that version.
+  # If neither a signing key nor `ATLAS_JWT` is configured there is no relay
+  # credential, so the transport raises {AtlasRb::ConfigurationError}.
   #
   # The module is mixed in via `extend`, so its methods become class methods on
   # the host (e.g. `AtlasRb::Work.connection({})`).
@@ -60,14 +50,13 @@ module AtlasRb
     # @param params [Hash] query-string / body params to attach to the request.
     #   Resource classes use this to pass things like `parent_id:`, `work_id:`,
     #   or `metadata:` without manually serializing.
-    # @param nuid [String, nil] optional Northeastern University ID to send in
-    #   the `User` header. When `nil`, falls through to
-    #   `AtlasRb.config.default_nuid&.call`; if that is also nil, no `User:`
-    #   header is sent (legacy bearer-only path).
-    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
-    #   header. When `nil`, falls through to
+    # @param nuid [String, nil] optional Northeastern University ID. On the
+    #   relay-signing path it is signed into the assertion `sub`. When `nil`,
+    #   falls through to `AtlasRb.config.default_nuid&.call`.
+    # @param on_behalf_of [String, nil] optional NUID carried as a signed `obo`
+    #   claim (acting-as / view-as). When `nil`, falls through to
     #   `AtlasRb.config.default_on_behalf_of&.call`; if that is also nil, no
-    #   `On-Behalf-Of:` header is sent. Used by acting-as / view-as flows.
+    #   `obo` claim is added.
     # @param idempotency_key [String, nil] optional UUID to send in the
     #   `Idempotency-Key` header. Used by retry-safe create flows (currently
     #   `POST /works`, `POST /file_sets`, `POST /files`) to deduplicate replays
@@ -96,15 +85,16 @@ module AtlasRb
 
     # Build a multipart Faraday connection used for binary and XML uploads.
     #
-    # The same `ATLAS_URL` / `ATLAS_TOKEN` env vars apply. Unlike {#connection},
+    # The same `ATLAS_URL` env var and auth modes apply. Unlike {#connection},
     # the `Content-Type` is set automatically by the multipart middleware, and
     # callers pass a payload hash whose values may include
     # `Faraday::Multipart::FilePart` instances. Fall-through semantics for
     # `nuid` / `on_behalf_of` match {#connection}.
     #
-    # @param nuid [String, nil] optional NUID for the `User` header.
-    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
-    #   header.
+    # @param nuid [String, nil] optional acting NUID (signed into the assertion
+    #   `sub` on the relay-signing path).
+    # @param on_behalf_of [String, nil] optional NUID carried as a signed `obo`
+    #   claim (acting-as / view-as).
     # @param idempotency_key [String, nil] optional UUID to send in the
     #   `Idempotency-Key` header. See {#connection} for semantics; the
     #   `POST /files` (Blob) create flow uses this transport.
@@ -174,9 +164,10 @@ module AtlasRb
     private
 
     # Build the auth + identity headers shared by {#connection} and {#multipart}.
-    # Precedence: ATLAS_JWT (BYO-JWT) > relay-signing > ATLAS_TOKEN relay. The
-    # acting nuid / on_behalf_of fall through to the configured `default_nuid` /
+    # Precedence: ATLAS_JWT (BYO-JWT) > relay-signing. The acting nuid /
+    # on_behalf_of fall through to the configured `default_nuid` /
     # `default_on_behalf_of` callables here, once, for whichever mode applies.
+    # Raises {ConfigurationError} when neither credential is configured.
     def auth_headers(nuid, on_behalf_of)
       jwt = ENV.fetch("ATLAS_JWT", nil)
       return { "Authorization" => "Bearer #{jwt}" } if jwt
@@ -184,14 +175,16 @@ module AtlasRb
       nuid         ||= AtlasRb.config.default_nuid&.call
       on_behalf_of ||= AtlasRb.config.default_on_behalf_of&.call
 
-      signed_relay_headers(nuid, on_behalf_of) || relay_headers(nuid, on_behalf_of)
+      signed_relay_headers(nuid, on_behalf_of) ||
+        raise(ConfigurationError,
+              "atlas_rb: no auth configured — set ATLAS_JWT or " \
+              "AtlasRb.config.assertion_signing_key (with an acting nuid to sign)")
     end
 
-    # A signed-assertion Authorization header (sub = acting nuid), or nil to
-    # defer to the legacy relay. nil when signing isn't configured or there is no
-    # acting nuid to put in `sub`. Acting-as is carried IN the assertion as a
-    # signed `obo` claim (Atlas honours it on the assertion path as of the
-    # signed-obo release), so it is no longer punted to the cerberus_token relay.
+    # A signed-assertion Authorization header (sub = acting nuid), or nil when
+    # signing isn't configured or there is no acting nuid to put in `sub`.
+    # Acting-as is carried IN the assertion as a signed `obo` claim (Atlas
+    # honours it on the assertion path; a header obo is ignored there).
     def signed_relay_headers(nuid, on_behalf_of)
       return nil unless nuid
 
@@ -199,15 +192,6 @@ module AtlasRb
       return nil unless key
 
       { "Authorization" => "Bearer #{signed_assertion(nuid.to_s, key, on_behalf_of)}" }
-    end
-
-    # Legacy relay headers: ATLAS_TOKEN bearer + acting-user identity headers.
-    # `nuid` / `on_behalf_of` are already resolved by {#auth_headers}.
-    def relay_headers(nuid, on_behalf_of)
-      headers = { "Authorization" => "Bearer #{ENV.fetch("ATLAS_TOKEN", nil)}" }
-      headers["User"]         = "NUID #{nuid}" if nuid
-      headers["On-Behalf-Of"] = "NUID #{on_behalf_of}" if on_behalf_of
-      headers
     end
 
     # Mint a Cerberus relay assertion for `nuid`, signed ES256 with `key`. The
