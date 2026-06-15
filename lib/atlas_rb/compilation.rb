@@ -32,9 +32,9 @@ module AtlasRb
     # non-grantee raises {AtlasRb::ForbiddenError}.
     #
     # @param id [String] the Compilation ID (NOID).
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -66,9 +66,9 @@ module AtlasRb
     # @param q [String, nil] case-insensitive title substring filter.
     # @param page [Integer, nil] 1-indexed page number.
     # @param per_page [Integer, nil] page size override.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -103,9 +103,8 @@ module AtlasRb
     #
     # @param title [String] the Set's title (required; blank is a 422).
     # @param description [String, nil] optional free-text description.
-    # @param nuid [String, nil] the acting user's NUID, forwarded as the
-    #   `User:` header — the created Set's owner. Required for
-    #   cerberus-token requests.
+    # @param nuid [String, nil] the acting user's NUID — signed into the
+    #   assertion `sub` on the relay-signing path, and the created Set's owner.
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -140,9 +139,9 @@ module AtlasRb
     # @param description [String, nil] new description.
     # @param permissions [Hash, nil] ACL replacement, e.g.
     #   `{ read: ["public"], edit: [], edit_users: ["000000003"] }`.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -175,9 +174,9 @@ module AtlasRb
     # not a container.
     #
     # @param id [String] the Compilation ID.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -199,9 +198,9 @@ module AtlasRb
     #
     # @param id [String] the Compilation ID.
     # @param collection_id [String] the Collection NOID to include.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -226,9 +225,9 @@ module AtlasRb
     #
     # @param id [String] the Compilation ID.
     # @param collection_id [String] the Collection NOID to remove.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -250,9 +249,9 @@ module AtlasRb
     #
     # @param id [String] the Compilation ID.
     # @param work_id [String] the Work NOID to include.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -273,9 +272,9 @@ module AtlasRb
     #
     # @param id [String] the Compilation ID.
     # @param work_id [String] the Work NOID to remove.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -300,9 +299,9 @@ module AtlasRb
     #
     # @param id [String] the Compilation ID.
     # @param work_id [String] the Work NOID to set aside.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -323,9 +322,9 @@ module AtlasRb
     #
     # @param id [String] the Compilation ID.
     # @param work_id [String] the Work NOID to restore to the resolved set.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
@@ -353,9 +352,9 @@ module AtlasRb
     # @param id [String] the Compilation ID.
     # @param page [Integer, nil] 1-indexed page number (default 1).
     # @param per_page [Integer, nil] page size (default 25, capped at 100).
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.

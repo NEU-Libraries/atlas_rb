@@ -30,21 +30,24 @@ Every regular-path request reads these environment variables:
 | Variable      | Purpose                                                       |
 |---------------|---------------------------------------------------------------|
 | `ATLAS_URL`   | Base URL of the Atlas API (e.g. `https://atlas.example.edu`). |
-| `ATLAS_TOKEN` | Cerberus-relay bearer token used in the `Authorization` header (relay mode). |
 | `ATLAS_JWT`   | *Optional.* A personal-access JWT minted by Atlas's `POST /nuid`. When set, switches to [BYO-JWT mode](#byo-jwt-mode-standalone-scripts). |
 
+The default relay path authenticates by **signing** a short-lived assertion (see
+[Relay-signing](#relay-signing-the-default-relay-path)); configure a signing key
+for it. `ATLAS_JWT`, if set, takes precedence.
+
 ```ruby
-ENV["ATLAS_URL"]   = "https://atlas.example.edu"
-ENV["ATLAS_TOKEN"] = "..."
+ENV["ATLAS_URL"] = "https://atlas.example.edu"
+# + a configured signing key (relay) or ENV["ATLAS_JWT"] (BYO-JWT)
 ```
 
 ### Ambient identity (`default_nuid` / `default_on_behalf_of`)
 
 Every resource method that talks to Atlas accepts a `nuid:` kwarg (the
 acting user) and an `on_behalf_of:` kwarg (the user the call is being
-made *for*, used by acting-as / view-as flows). Both are forwarded as
-`User: NUID <nuid>` and `On-Behalf-Of: NUID <nuid>` headers
-respectively.
+made *for*, used by acting-as / view-as flows). On the relay-signing path
+`nuid` is signed into the assertion `sub` and `on_behalf_of` rides as a
+signed `obo` claim.
 
 Rather than threading them at every call site, register callables
 once on app boot and let the gem read them as defaults:
@@ -74,17 +77,17 @@ AtlasRb::Work.find("w-789")
 AtlasRb::Work.find("w-789", nuid: "X")
 ```
 
-If neither the call site nor the registered default supplies a value,
-no header is sent (legacy bearer-only path preserved).
+On the relay-signing path the acting `nuid` is required (it becomes the
+assertion `sub`): if neither the call site nor the registered `default_nuid`
+supplies one, the transport raises `AtlasRb::ConfigurationError`.
 
 ### BYO-JWT mode (standalone scripts)
 
-The relay path above is what a Rails host (Cerberus) uses: a shared
-`ATLAS_TOKEN` plus a `User: NUID` header naming the acting person. For
-**standalone scripts** — a librarian automating their own workflow — Atlas
-also accepts a *personal-access JWT*, minted by Cerberus post-SSO via
-`POST /nuid` and handed to the user. Set it as `ATLAS_JWT` and the gem
-switches transport modes:
+The relay-signing path above is what a Rails host (Cerberus) uses: a signed
+assertion naming the acting person. For **standalone scripts** — a librarian
+automating their own workflow — Atlas also accepts a *personal-access JWT*,
+minted by Cerberus post-SSO via `POST /nuid` and handed to the user. Set it as
+`ATLAS_JWT` and the gem switches transport modes:
 
 ```ruby
 ENV["ATLAS_URL"] = "https://atlas.example.edu"
@@ -96,7 +99,7 @@ AtlasRb::Work.find("w-789")
 
 In BYO-JWT mode:
 
-- The JWT is the bearer, **taking precedence over `ATLAS_TOKEN`**.
+- The JWT is the bearer, **taking precedence over relay-signing**.
 - **No `User:` header is sent** — the token already encodes the acting
   user, and any `nuid:` kwarg or `default_nuid` is ignored on this path.
 - **`On-Behalf-Of` is suppressed** — acting-as is a Cerberus-relay-only
@@ -106,14 +109,12 @@ In BYO-JWT mode:
 To rotate or revoke, ask Cerberus to regenerate your token (Atlas rotates
 the user's `jti`, invalidating outstanding tokens — single-token model).
 
-### Relay-signing mode (the `ATLAS_TOKEN` replacement)
+### Relay-signing (the default relay path)
 
-The default relay authenticates with the shared `ATLAS_TOKEN` and *asserts* the
-acting user via a `User: NUID` header. Relay-signing replaces that with a
-**proven** identity: the relay **signs** a short-lived assertion with its own
-private key (`iss=cerberus`, `aud=atlas`, `sub` = the acting nuid, ES256), which
-Atlas verifies against the matching public key. No shared secret, no asserted
-header.
+The relay authenticates with a **proven** identity: it **signs** a short-lived
+assertion with its own private key (`iss=cerberus`, `aud=atlas`, `sub` = the
+acting nuid, ES256), which Atlas verifies against the matching public key. No
+shared secret, no asserted `User:` header — identity is the signed `sub`.
 
 Configure a signing key (and the `kid` Atlas indexes its public key by) — value
 or callable, so a Rails host reads it from credentials at request time:
@@ -125,10 +126,8 @@ AtlasRb.configure do |config|
 end
 ```
 
-When a signing key is configured, the regular relay (`connection` / `multipart`)
-signs instead of sending `ATLAS_TOKEN` + `User:`. Otherwise it behaves exactly as
-before — so signing **coexists with `ATLAS_TOKEN` during cutover** (turn it on by
-configuring the key; roll back by clearing it).
+With no signing key configured (and no `ATLAS_JWT`), the relay has no credential
+and `connection` / `multipart` raise `AtlasRb::ConfigurationError`.
 
 Two things to know:
 
@@ -136,8 +135,6 @@ Two things to know:
   with `sub` = the operator and `obo` = the target, inside the signature — so the
   target can't be forged onto a stolen assertion, and no `On-Behalf-Of` header is
   sent. Atlas admin-gates the operator and ignores any header obo on this path.
-  (Requires an Atlas on the signed-obo release; older Atlas would silently ignore
-  the claim — don't enable signing for acting-as traffic until Atlas is current.)
 - **`ATLAS_JWT` still wins.** A personal token (BYO-JWT) takes precedence over
   relay-signing.
 
@@ -188,7 +185,7 @@ radius and the kind of authentication they need:
 
 | Namespace            | What it does                                                                       | Auth                                                | Friction                              |
 |----------------------|------------------------------------------------------------------------------------|-----------------------------------------------------|---------------------------------------|
-| `AtlasRb::*`         | Regular CRUD (find / list / create / update / tombstone / metadata, etc.)          | User token (`ATLAS_TOKEN`) + acting user's NUID     | None — these are the daily-use paths. |
+| `AtlasRb::*`         | Regular CRUD (find / list / create / update / tombstone / metadata, etc.)          | Relay-signing (signed assertion, `sub` = acting NUID) | None — these are the daily-use paths. |
 | `AtlasRb::Admin::*`  | Hard delete (`destroy`) and un-tombstone (`restore`) for Work / Collection / Community. | Same as regular — a real operator is acting.        | `destroy` requires `confirm: :i_understand`. |
 | `AtlasRb::System::*` | System-context provisioning (currently just SSO user find-or-create).              | System token (`Rails.application.credentials.atlas_system_token`) + `User: NUID 000000000`. | The namespace itself is the marker — there is no way to call these as a non-system principal. |
 
@@ -446,8 +443,8 @@ string-keyed callers keep working.
 ```ruby
 require "atlas_rb"
 
-ENV["ATLAS_URL"]   = "https://atlas.example.edu"
-ENV["ATLAS_TOKEN"] = "..."
+ENV["ATLAS_URL"] = "https://atlas.example.edu"
+# + a configured signing key (relay) or ENV["ATLAS_JWT"] (BYO-JWT)
 
 # 1. Build the org structure (each create can optionally seed MODS metadata).
 community  = AtlasRb::Community.create(nil,           "/tmp/community-mods.xml")

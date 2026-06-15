@@ -38,16 +38,15 @@ require_relative "atlas_rb/audit_event"
 # Environment variables drive every request:
 #
 # - `ATLAS_URL`   — base URL of the Atlas API (e.g. `https://atlas.example.edu`).
-# - `ATLAS_TOKEN` — Cerberus-relay bearer token sent in the `Authorization`
-#   header on the default path.
 # - `ATLAS_JWT`   — optional personal-access JWT (minted by Atlas's
 #   `POST /nuid`). When set, the transport runs in bring-your-own-JWT mode:
 #   the JWT is the bearer and no `User:` / `On-Behalf-Of:` headers are sent.
 #   See {AtlasRb::FaradayHelper} for the mode semantics.
 #
-# {AtlasRb::Authentication} additionally accepts an NUID (Northeastern
-# University ID) which is forwarded in a `User: NUID <nuid>` header so the
-# server can resolve the acting user.
+# The default (relay) path signs a short-lived ES256 assertion for the acting
+# NUID with Cerberus's private key, configured via
+# {AtlasRb.config#assertion_signing_key} / `assertion_signing_kid`. Identity is
+# the signed `sub`; see {AtlasRb::FaradayHelper}.
 #
 # ## Resource hierarchy
 #
@@ -68,8 +67,8 @@ require_relative "atlas_rb/audit_event"
 # ## Quick start
 #
 # @example End-to-end: create a Work and attach a file
-#   ENV["ATLAS_URL"]   = "https://atlas.example.edu"
-#   ENV["ATLAS_TOKEN"] = "..."
+#   ENV["ATLAS_URL"] = "https://atlas.example.edu"
+#   # plus a configured signing key (relay) or ENV["ATLAS_JWT"] (BYO-JWT)
 #
 #   community  = AtlasRb::Community.create(nil, "/tmp/community-mods.xml")
 #   collection = AtlasRb::Collection.create(community["id"], "/tmp/coll-mods.xml")
@@ -124,11 +123,11 @@ module AtlasRb
 
     # Reset the connected Atlas instance to a clean state.
     #
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it. Atlas's `MaintenanceController#reset`
-    #   runs through the standard `require_auth` filter, so under Atlas
-    #   0.6.12+ the header is needed for any cerberus-token caller.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token). Atlas's
+    #   `MaintenanceController#reset` runs through the standard `require_auth`
+    #   filter like any other endpoint.
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.

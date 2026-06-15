@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.4.0
+
+### Removed — legacy `ATLAS_TOKEN` relay
+
+The shared-secret relay (`ATLAS_TOKEN` bearer + `User: NUID` / `On-Behalf-Of`
+headers) has been removed. **Relay-signing is now the only relay path:** set
+`AtlasRb.config.assertion_signing_key` / `assertion_signing_kid` and the
+transport signs a short-lived ES256 assertion (`sub` = acting NUID; acting-as
+rides a signed `obo` claim). `ATLAS_JWT` (BYO-JWT) still takes precedence.
+
+With neither a signing key nor `ATLAS_JWT` configured, `connection` /
+`multipart` now raise the new `AtlasRb::ConfigurationError` rather than falling
+back to `ATLAS_TOKEN`. The `ATLAS_TOKEN` environment variable is no longer read.
+
+**Migration:** hosts must configure a signing key (Cerberus already does via its
+`atlas_rb` initializer). This is a breaking change for any caller still relying
+on `ATLAS_TOKEN`.
+
 ## 1.3.5
 
 ### Added — `Compilation.list(q:)` title filter

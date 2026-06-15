@@ -10,10 +10,10 @@ module AtlasRb
   #
   # The `:system` principal needs a different bearer token (carried in
   # `Rails.application.credentials.atlas_system_token`, not the user-side
-  # `ENV["ATLAS_TOKEN"]`) and pairs with a different `User:` header (always
-  # {NUID}, never the acting user). Atlas's `require_auth` enforces the
-  # pairing — a user token paired with the system NUID, or the system token
-  # paired with a real user NUID, both 401.
+  # relay-signing / `ATLAS_JWT` credentials) and pairs with a hard-pinned
+  # `User:` header (always {NUID}, never the acting user). Atlas's
+  # `require_auth` enforces the pairing — the system token paired with a
+  # real-user NUID is a 401.
   #
   # Routing system calls through their own class makes the carve-out
   # structural: there is no kwarg that flips a regular call into a system

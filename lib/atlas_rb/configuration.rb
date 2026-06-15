@@ -45,10 +45,10 @@ module AtlasRb
     #   to send no `On-Behalf-Of:` header.
     attr_accessor :default_on_behalf_of
 
-    # Relay signing (the cerberus_token replacement). When set, the regular
-    # relay path *signs* a short-lived assertion (ES256, `sub` = acting nuid)
-    # instead of sending `ATLAS_TOKEN` + a `User:` header — identity becomes
-    # proven, not asserted. Leave nil (the default) to keep the legacy relay.
+    # Relay signing. When set, the regular relay path *signs* a short-lived
+    # assertion (ES256, `sub` = acting nuid) — identity is proven, not asserted.
+    # This is the relay credential: with no signing key configured (and no
+    # `ATLAS_JWT`), the transport raises {AtlasRb::ConfigurationError}.
     #
     # Accepts either a value or a callable (resolved per request, so a Rails
     # host can read it from request-scoped state / credentials). The value may

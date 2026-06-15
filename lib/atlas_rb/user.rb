@@ -5,8 +5,9 @@ module AtlasRb
   # resolution.
   #
   # This is a **user-context** binding: calls authenticate as the acting
-  # user via the standard `ATLAS_TOKEN` + `User:` header pairing, like every
-  # other top-level class. It is deliberately *not* part of
+  # user via the standard relay-signing path (the acting NUID is signed into
+  # the assertion `sub`), like every other top-level class. It is
+  # deliberately *not* part of
   # {AtlasRb::System} — that namespace is structurally reserved for
   # system-token calls ({System::User.find_or_create}), and directory
   # lookups are an ordinary logged-in-user capability.
@@ -30,9 +31,9 @@ module AtlasRb
     # it by name; a blank query resolves to an empty list.
     #
     # @param query [String] name fragment or NUID prefix to match.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @return [Array<AtlasRb::Mash>] matching directory entries, each
     #   carrying `nuid` and `name`.
     #
@@ -49,9 +50,9 @@ module AtlasRb
     #
     # @param target_nuid [String] the NUID being looked up — the *subject*
     #   of the call, distinct from the acting `nuid:` kwarg.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @return [AtlasRb::Mash, nil] the `nuid` + `name` entry, or `nil` when
     #   Atlas reports the NUID as absent (unknown, or held by an excluded
     #   role — the two are indistinguishable on the wire by design).
@@ -73,9 +74,9 @@ module AtlasRb
     # input — callers index by `nuid`. Atlas caps the batch at 100.
     #
     # @param nuids [Array<String>, String] the NUIDs to resolve.
-    # @param nuid [String, nil] optional acting user's NUID, forwarded as the
-    #   `User:` header. Required for cerberus-token requests; legacy bearer
-    #   tokens still resolve without it.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
     # @return [Array<AtlasRb::Mash>] resolved entries, each carrying `nuid`
     #   and `name`, ordered by name.
     #

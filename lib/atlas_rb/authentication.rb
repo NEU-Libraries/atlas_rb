@@ -3,15 +3,15 @@
 module AtlasRb
   # User-facing identity lookups against the Atlas API.
   #
-  # Unlike the resource classes, {Authentication} threads a real NUID into the
-  # `User` header via {FaradayHelper#connection}'s second positional argument.
-  # The Atlas server uses that NUID — combined with the bearer token from
-  # `ATLAS_TOKEN` — to resolve the acting user and their group memberships.
+  # Unlike the resource classes, {Authentication} threads a real NUID into
+  # {FaradayHelper#connection}'s second positional argument. On the relay-signing
+  # path that NUID is signed into the assertion `sub`; Atlas resolves the acting
+  # user and their group memberships from the proven `sub`.
   #
-  # No login round-trip happens here today; the bearer token is assumed to be
-  # already provisioned out-of-band. The commented-out code in this file
-  # reflects an older flow where a `/token` endpoint exchanged an NUID for a
-  # session token.
+  # No login round-trip happens here today; auth is assumed to be already
+  # provisioned out-of-band (a configured signing key, or `ATLAS_JWT`). The
+  # commented-out code in this file reflects an older flow where a `/token`
+  # endpoint exchanged an NUID for a session token.
   class Authentication
     extend AtlasRb::FaradayHelper
 
