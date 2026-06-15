@@ -36,11 +36,15 @@ module AtlasRb
   # short-lived assertion (ES256, `iss=cerberus`, `aud=atlas`, `sub` = the
   # acting nuid) with Cerberus's private key — Atlas verifies it with the
   # public key. No `User:` header; identity is the proven `sub`. **Acting-as
-  # auto-falls-back to the legacy relay**: an `on_behalf_of` request is NOT
-  # signed (Atlas 403s `On-Behalf-Of` on the assertion path until a signed
-  # `obo` claim ships), so the boundary cannot be violated by a caller. Off
+  # rides a signed `obo` claim** inside the assertion (the target can't be forged
+  # onto a stolen assertion; Atlas admin-gates the operator and ignores any
+  # header obo on this path) — it is no longer punted to the legacy relay. Off
   # unless a signing key is configured (so it coexists with `ATLAS_TOKEN`
   # during cutover). `ATLAS_JWT`, if set, still wins over signing.
+  #
+  # Requires an Atlas that verifies the signed `obo` claim (the signed-obo
+  # release); against an older Atlas an `obo` would be silently ignored, so
+  # don't enable signing for acting-as traffic until Atlas is on that version.
   #
   # The module is mixed in via `extend`, so its methods become class methods on
   # the host (e.g. `AtlasRb::Work.connection({})`).
@@ -184,17 +188,17 @@ module AtlasRb
     end
 
     # A signed-assertion Authorization header (sub = acting nuid), or nil to
-    # defer to the legacy relay. nil when signing isn't configured, there is no
-    # acting nuid to put in `sub`, or this is an acting-as request — On-Behalf-Of
-    # stays on the cerberus_token relay (Atlas 403s it on the assertion path),
-    # so the boundary can't be violated by a caller.
+    # defer to the legacy relay. nil when signing isn't configured or there is no
+    # acting nuid to put in `sub`. Acting-as is carried IN the assertion as a
+    # signed `obo` claim (Atlas honours it on the assertion path as of the
+    # signed-obo release), so it is no longer punted to the cerberus_token relay.
     def signed_relay_headers(nuid, on_behalf_of)
-      return nil unless nuid && on_behalf_of.nil?
+      return nil unless nuid
 
       key = assertion_signing_key
       return nil unless key
 
-      { "Authorization" => "Bearer #{signed_assertion(nuid.to_s, key)}" }
+      { "Authorization" => "Bearer #{signed_assertion(nuid.to_s, key, on_behalf_of)}" }
     end
 
     # Legacy relay headers: ATLAS_TOKEN bearer + acting-user identity headers.
@@ -209,17 +213,14 @@ module AtlasRb
     # Mint a Cerberus relay assertion for `nuid`, signed ES256 with `key`. The
     # `kid` header tells Atlas which public key to verify against; iss/aud are
     # the fixed contract; the short TTL bounds replay; `jti` is forward-compat
-    # for an Atlas-side one-time cache.
-    def signed_assertion(nuid, key)
+    # for an Atlas-side one-time cache. When `on_behalf_of` is given, it rides as
+    # a SIGNED `obo` claim — acting-as that can't be forged onto a stolen
+    # assertion (Atlas admin-gates the operator and ignores any header obo here).
+    def signed_assertion(nuid, key, on_behalf_of = nil)
       now = Time.now.to_i
-      payload = {
-        "iss" => ASSERTION_ISSUER,
-        "aud" => ASSERTION_AUDIENCE,
-        "sub" => nuid,
-        "iat" => now,
-        "exp" => now + ASSERTION_TTL,
-        "jti" => SecureRandom.uuid
-      }
+      payload = { "iss" => ASSERTION_ISSUER, "aud" => ASSERTION_AUDIENCE, "sub" => nuid,
+                  "iat" => now, "exp" => now + ASSERTION_TTL, "jti" => SecureRandom.uuid,
+                  "obo" => on_behalf_of&.to_s }.compact # obo only when acting-as
       JWT.encode(payload, key, "ES256", { kid: assertion_signing_kid })
     end
 

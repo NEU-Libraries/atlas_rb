@@ -130,12 +130,14 @@ signs instead of sending `ATLAS_TOKEN` + `User:`. Otherwise it behaves exactly a
 before — so signing **coexists with `ATLAS_TOKEN` during cutover** (turn it on by
 configuring the key; roll back by clearing it).
 
-Two carve-outs keep the boundaries safe:
+Two things to know:
 
-- **Acting-as auto-falls-back to the `ATLAS_TOKEN` relay.** An `on_behalf_of`
-  request is *not* signed — Atlas rejects `On-Behalf-Of` on the assertion path
-  (403) until a signed `obo` claim ships, so the gem keeps acting-as on the
-  legacy relay rather than letting it 403.
+- **Acting-as rides a signed `obo` claim.** An `on_behalf_of` request is signed
+  with `sub` = the operator and `obo` = the target, inside the signature — so the
+  target can't be forged onto a stolen assertion, and no `On-Behalf-Of` header is
+  sent. Atlas admin-gates the operator and ignores any header obo on this path.
+  (Requires an Atlas on the signed-obo release; older Atlas would silently ignore
+  the claim — don't enable signing for acting-as traffic until Atlas is current.)
 - **`ATLAS_JWT` still wins.** A personal token (BYO-JWT) takes precedence over
   relay-signing.
 

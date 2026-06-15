@@ -108,11 +108,17 @@ RSpec.describe AtlasRb::FaradayHelper do
       expect(payload["exp"]).to be > Time.now.to_i
     end
 
-    it "falls back to the ATLAS_TOKEN relay for acting-as (On-Behalf-Of stays on the token)" do
+    it "carries acting-as as a signed obo claim (operator=sub, target=obo), no header" do
       headers = host.connection({}, "001234567", on_behalf_of: "009999999").headers
-      expect(headers["Authorization"]).to eq("Bearer relay-token")
-      expect(headers["User"]).to eq("NUID 001234567")
-      expect(headers["On-Behalf-Of"]).to eq("NUID 009999999")
+      expect(headers).not_to have_key("User")
+      expect(headers).not_to have_key("On-Behalf-Of")
+      payload, = decode(bearer(headers))
+      expect(payload).to include("sub" => "001234567", "obo" => "009999999")
+    end
+
+    it "omits the obo claim entirely for a non-acting-as request" do
+      payload, = decode(bearer(host.connection({}, "001234567").headers))
+      expect(payload).not_to have_key("obo")
     end
 
     it "falls back to the relay when there is no acting nuid to sign for" do
