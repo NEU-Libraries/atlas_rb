@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.0
+
+### Added — optional auth for `Reset.clean`
+
+`AtlasRb::Reset.clean` now uses **optional auth**: it signs an assertion when a
+credential is available and sends no `Authorization` header otherwise, instead
+of raising `AtlasRb::ConfigurationError`. Atlas serves `GET /reset` with
+`require_auth` skipped (env-gated), so the call no longer needs an acting nuid
+or a configured signer just to satisfy the client-side header builder — fixing
+test `before(:suite)` resets that run before any acting principal is set.
+
+`FaradayHelper#connection` gains an `auth:` keyword (`:required` default,
+`:optional`) to support this; every other endpoint stays strict and still
+raises on a missing credential.
+
 ## 1.4.0
 
 ### Removed — legacy `ATLAS_TOKEN` relay

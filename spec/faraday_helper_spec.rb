@@ -42,6 +42,24 @@ RSpec.describe AtlasRb::FaradayHelper do
           .to raise_error(AtlasRb::ConfigurationError, /ATLAS_JWT or .*assertion_signing_key/)
       end
     end
+
+    context "auth: :optional (for endpoints Atlas serves with require_auth skipped)" do
+      it "sends no Authorization header instead of raising when nothing is configured" do
+        headers = host.connection({}, auth: :optional).headers
+        expect(headers).not_to have_key("Authorization")
+        expect(headers).not_to have_key("User")
+      end
+
+      it "still signs when a signing key + acting nuid are available" do
+        AtlasRb.config.assertion_signing_key = OpenSSL::PKey::EC.generate("prime256v1")
+        AtlasRb.config.assertion_signing_kid = "k1"
+        headers = host.connection({}, "001234567", auth: :optional).headers
+        expect(headers["Authorization"]).to match(/\ABearer /)
+      ensure
+        AtlasRb.config.assertion_signing_key = nil
+        AtlasRb.config.assertion_signing_kid = nil
+      end
+    end
   end
 
   describe "#multipart" do

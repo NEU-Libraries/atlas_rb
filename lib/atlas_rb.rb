@@ -123,20 +123,23 @@ module AtlasRb
 
     # Reset the connected Atlas instance to a clean state.
     #
-    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
-    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
-    #   path it is ignored (identity lives in the token). Atlas's
-    #   `MaintenanceController#reset` runs through the standard `require_auth`
-    #   filter like any other endpoint.
-    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
-    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
-    #   omitted.
+    # Atlas serves `GET /reset` with `require_auth` **skipped** (it is env-gated,
+    # not principal-gated), so this call uses **optional auth**: it signs an
+    # assertion when a credential is available, and sends no `Authorization`
+    # header otherwise — never raising {AtlasRb::ConfigurationError} for lack of
+    # one. That lets a test `before(:suite)` reset before any acting nuid is set.
+    #
+    # @param nuid [String, nil] optional acting user's NUID. When a signing key
+    #   is configured it is signed into the assertion `sub`; otherwise it is
+    #   unused (Atlas ignores it on this endpoint). Mostly here for symmetry.
+    # @param on_behalf_of [String, nil] optional NUID. Falls through to
+    #   {AtlasRb.config}.default_on_behalf_of when omitted.
     # @return [String, nil] the raw response body from `GET /reset`.
     #
     # @example
-    #   AtlasRb::Reset.clean(nuid: "000000000")
+    #   AtlasRb::Reset.clean
     def self.clean(nuid: nil, on_behalf_of: nil)
-      connection({}, nuid, on_behalf_of: on_behalf_of).get("/reset")&.body
+      connection({}, nuid, on_behalf_of: on_behalf_of, auth: :optional).get("/reset")&.body
     end
   end
 end
