@@ -53,16 +53,31 @@ module AtlasRb
       ))["compilation"]
     end
 
-    # List Compilations, owner-scoped and paginated (newest first).
+    # List Compilations, paginated (newest first), in one of three modes.
     #
-    # Defaults to the acting user's own Sets. Pass `owner:` to list another
-    # user's — that is admin-only and raises {AtlasRb::ForbiddenError} for
-    # anyone else. There is no public browse surface. Pass `q:` to narrow
-    # by case-insensitive title substring; the filter applies before
-    # pagination, so the `"pagination"` block describes the filtered result.
+    # Default (no `scope:`) is owner-scoped: the acting user's own Sets. Pass
+    # `owner:` to list another user's — admin-only, raising
+    # {AtlasRb::ForbiddenError} for anyone else; there is no public browse
+    # surface.
+    #
+    # Pass `scope:` for grant-scoped discovery — Sets where the acting user is
+    # a *grantee* but **not** the owner (owned Sets are always excluded; list
+    # those with the default mode):
+    #   - `scope: :editable` — Sets the caller may edit (`edit_users` /
+    #     `edit_groups` grants).
+    #   - `scope: :shared` — Sets shared with the caller (`read_groups` grants,
+    #     plus the edit grants that imply read).
+    # Grant-scoped modes are keyed on the acting user; `owner:` is ignored and
+    # group membership is resolved server-side. An unknown `scope:` is a 400.
+    #
+    # Pass `q:` to narrow by case-insensitive title substring in any mode; the
+    # filter applies before pagination, so the `"pagination"` block describes
+    # the filtered result.
     #
     # @param owner [String, nil] NUID whose Sets to list (admin-only when it
-    #   isn't the acting user). Omit for "my Sets".
+    #   isn't the acting user). Omit for "my Sets". Ignored when `scope:` is set.
+    # @param scope [Symbol, String, nil] grant-scoped mode — `:editable` or
+    #   `:shared`. Omit for the owner-scoped default.
     # @param q [String, nil] case-insensitive title substring filter.
     # @param page [Integer, nil] 1-indexed page number.
     # @param per_page [Integer, nil] page size override.
@@ -82,11 +97,18 @@ module AtlasRb
     # @example Another user's Sets (admin)
     #   AtlasRb::Compilation.list(owner: "000000002", nuid: "000000004")
     #
+    # @example Sets shared with me that I can edit (not owned)
+    #   AtlasRb::Compilation.list(scope: :editable, nuid: "000000002")
+    #
+    # @example Sets shared with me to view (read + edit grants, not owned)
+    #   AtlasRb::Compilation.list(scope: :shared, nuid: "000000002")
+    #
     # @example Title typeahead
     #   AtlasRb::Compilation.list(q: "course", nuid: "000000002")
-    def self.list(owner: nil, q: nil, page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
+    def self.list(owner: nil, scope: nil, q: nil, page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
       params = {}
       params[:owner]    = owner    if owner
+      params[:scope]    = scope    if scope
       params[:q]        = q        if q
       params[:page]     = page     if page
       params[:per_page] = per_page if per_page
