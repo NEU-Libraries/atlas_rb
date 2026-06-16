@@ -134,6 +134,41 @@ module AtlasRb
     end
   end
 
+  # Raised when Atlas rejects a binary upload's verify-on-ingest check with a
+  # `422` carrying a fixity discriminator — `fixity_mismatch` (the uploaded
+  # bytes don't match the supplied `expected_digest`) or
+  # `unsupported_digest_algorithm` (a malformed/unknown `expected_digest`).
+  # Fires on `POST /files`, `PATCH /files/:id`, and `PATCH /file_sets/:id`.
+  #
+  # The upload sibling of {ReparentError} / {LinkedMemberError}; same shape,
+  # same rationale — without it the `["blob"]` / `["file_set"]` unwrap would
+  # return `nil` on the 422 and discard the signal a migration needs to tell a
+  # corrupted transfer from a clean one. Atlas rejects *before* persisting, so
+  # nothing is left behind to clean up.
+  #
+  #   rescue AtlasRb::FixityMismatchError => e
+  #     # e.code == "fixity_mismatch": re-fetch the source, retry, or quarantine
+  #
+  # @note Authorization failures surface as {ForbiddenError} (HTTP 403).
+  class FixityMismatchError < Error
+    # @return [String, nil] the machine-readable error code from the envelope
+    #   (`"fixity_mismatch"` or `"unsupported_digest_algorithm"`).
+    attr_reader :code
+
+    # @return [String, nil] the rejected resource's ID, from the envelope (the
+    #   FileSet on the attach path; may be nil on `POST /files`).
+    attr_reader :resource_id
+
+    # @param message [String] human-readable rejection description.
+    # @param code [String, nil] the envelope's `error` discriminator.
+    # @param resource_id [String, nil] the rejected resource's ID.
+    def initialize(message, code: nil, resource_id: nil)
+      super(message)
+      @code = code
+      @resource_id = resource_id
+    end
+  end
+
   # Raised when Atlas refuses a re-parent, linked-member, or Compilation
   # request with an HTTP `403`, whose envelope is
   # `{ "error", "action", "subject" }`. Lets callers distinguish "you may

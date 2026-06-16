@@ -124,8 +124,35 @@ module AtlasRb
         headers: headers
       ) do |f|
         f.use AtlasRb::Middleware::RaiseOnStaleResource
+        # Translate Atlas's verify-on-ingest 422 (fixity_mismatch /
+        # unsupported_digest_algorithm) into a typed FixityMismatchError —
+        # the JSON-connection path already carries this; uploads need it too.
+        f.use AtlasRb::Middleware::RaiseOnResourceError
         f.request :multipart
         f.request :url_encoded
+      end
+    end
+
+    # Build a streaming multipart FilePart for `blob_path`, run the request
+    # inside the block, and close the underlying File handle deterministically
+    # afterward (on success or exception). The handle must stay open *during*
+    # the request — Faraday reads it while posting — so it can't be closed
+    # before the call; an unclosed handle leaks a descriptor per upload, which
+    # exhausts FDs across a TB migration of millions of files.
+    #
+    # Streaming/memory: faraday-multipart wraps the part in a streaming
+    # CompositeReadIO and the default net_http adapter sends it via
+    # `request.body_stream` (Content-Length known), so a multi-GB file uploads
+    # without being buffered into a String in memory. (Swapping the host app's
+    # default Faraday adapter to a buffering one would regress this.)
+    #
+    # @param blob_path [String] path to the binary on disk.
+    # @yieldparam part [Faraday::Multipart::FilePart] the streaming part.
+    # @return the block's return value.
+    def with_file_part(blob_path)
+      File.open(blob_path, "rb") do |io|
+        yield Faraday::Multipart::FilePart.new(io, "application/octet-stream",
+                                               File.basename(blob_path))
       end
     end
 

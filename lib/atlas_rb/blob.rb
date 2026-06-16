@@ -24,11 +24,15 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @return [Hash] the `"blob"` object, already unwrapped — typically
-    #   includes `"id"`, `"original_filename"`, `"size"`, and a download URL.
+    #   includes `"id"`, `"original_filename"`, `"size"`, `"digest"` (the
+    #   recorded fixity digest `"sha512:<hex>"`, or `nil` for a Blob with no
+    #   held bytes — reconciliation compares this against the v1 manifest
+    #   without re-downloading), and a download URL.
     #
     # @example
     #   AtlasRb::Blob.find("b-321")
-    #   # => { "id" => "b-321", "original_filename" => "scan.pdf", ... }
+    #   # => { "id" => "b-321", "original_filename" => "scan.pdf",
+    #   #      "digest" => "sha512:9f86d0…", ... }
     def self.find(id, nuid: nil, on_behalf_of: nil)
       AtlasRb::Mash.new(JSON.parse(
         connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
@@ -82,33 +86,44 @@ module AtlasRb
     # @param idempotency_key [String, nil] optional UUID. A repeat call with
     #   the same key returns the originally-created Blob instead of creating
     #   a new one. See {AtlasRb::Work.create} for full semantics.
+    # @param expected_digest [String, nil] optional verify-on-ingest checksum,
+    #   `"<algorithm>:<hexvalue>"` (sha512/sha256/sha1/md5, e.g.
+    #   `"sha256:abc…"`). Atlas hashes the uploaded bytes **before** persisting
+    #   and raises {AtlasRb::FixityMismatchError} (HTTP 422) on a mismatch or an
+    #   unsupported algorithm — nothing is left behind on rejection.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Hash] the created `"blob"` payload, including its `"id"`.
+    # @return [Hash] the created `"blob"` payload, including its `"id"` and
+    #   `"digest"` (the recorded fixity digest, `"sha512:<hex>"`).
+    # @raise [AtlasRb::FixityMismatchError] if `expected_digest` was supplied and
+    #   the uploaded bytes did not match (or the algorithm is unsupported).
+    #
+    # @note Streams the file (FD closed deterministically); a multi-GB upload is
+    #   not buffered in memory. See {AtlasRb::FaradayHelper#with_file_part}.
     #
     # @example
     #   AtlasRb::Blob.create("w-789", "/tmp/upload.tmp", "final_thesis.pdf")
     #   # => { "id" => "b-321", "original_filename" => "final_thesis.pdf", ... }
     #
-    # @example Retry-safe bulk-deposit create
+    # @example Retry-safe bulk-deposit create with fixity verification
     #   key = SecureRandom.uuid
     #   AtlasRb::Blob.create("w-789", "/tmp/upload.tmp", "thesis.pdf",
-    #                        idempotency_key: key)
-    def self.create(id, blob_path, original_filename, idempotency_key: nil, nuid: nil, on_behalf_of: nil)
-      payload = { work_id: id,
-                  original_filename: original_filename,
-                  binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
-                                                          "application/octet-stream",
-                                                          File.basename(blob_path)) }
+    #                        idempotency_key: key, expected_digest: "sha256:#{sha}")
+    def self.create(id, blob_path, original_filename, expected_digest: nil,
+                    idempotency_key: nil, nuid: nil, on_behalf_of: nil)
+      with_file_part(blob_path) do |part|
+        payload = { work_id: id, original_filename: original_filename, binary: part }
+        payload[:expected_digest] = expected_digest if expected_digest
 
-      AtlasRb::Mash.new(JSON.parse(
-        multipart(nuid, on_behalf_of: on_behalf_of, idempotency_key: idempotency_key)
-          .post(ROUTE, payload)&.body
-      ))['blob']
+        AtlasRb::Mash.new(JSON.parse(
+          multipart(nuid, on_behalf_of: on_behalf_of, idempotency_key: idempotency_key)
+            .post(ROUTE, payload)&.body
+        ))['blob']
+      end
     end
 
     # Delete a Blob (the bytes *and* the metadata record).
@@ -136,23 +151,32 @@ module AtlasRb
     #
     # @param id [String] the Blob ID.
     # @param blob_path [String] path to the replacement binary on disk.
+    # @param expected_digest [String, nil] optional verify-on-ingest checksum,
+    #   `"<algorithm>:<hexvalue>"`. 422 ({AtlasRb::FixityMismatchError}) on mismatch.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Hash] the parsed JSON response from the patch.
+    # @return [Hash] the parsed JSON response from the patch (the updated
+    #   `"blob"`, with a refreshed `"digest"` for the new revision).
+    # @raise [AtlasRb::FixityMismatchError] if `expected_digest` was supplied and
+    #   the uploaded bytes did not match (or the algorithm is unsupported).
+    #
+    # @note Streams the file with the FD closed deterministically — see {.create}.
     #
     # @example
     #   AtlasRb::Blob.update("b-321", "/tmp/revised.pdf")
-    def self.update(id, blob_path, nuid: nil, on_behalf_of: nil)
-      payload = { binary: Faraday::Multipart::FilePart.new(File.open(blob_path),
-                                                          "application/octet-stream",
-                                                          File.basename(blob_path)) }
-      AtlasRb::Mash.new(JSON.parse(
-        multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)&.body
-      ))
+    def self.update(id, blob_path, expected_digest: nil, nuid: nil, on_behalf_of: nil)
+      with_file_part(blob_path) do |part|
+        payload = { binary: part }
+        payload[:expected_digest] = expected_digest if expected_digest
+
+        AtlasRb::Mash.new(JSON.parse(
+          multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)&.body
+        ))
+      end
     end
   end
 end

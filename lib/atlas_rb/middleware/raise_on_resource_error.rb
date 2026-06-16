@@ -15,39 +15,53 @@ module AtlasRb
     # {RaiseOnStaleResource}.
     #
     # It is intentionally narrow — it only fires on the re-parent
-    # (`.../parent`) and linked-member (`.../linked_members...`) write paths
-    # and the Compilation surface (`/compilations...`), and only on
-    # `403` / `422` bodies carrying an `error` discriminator.
+    # (`.../parent`) and linked-member (`.../linked_members...`) write paths,
+    # the Compilation surface (`/compilations...`), and binary uploads
+    # (`/files...`, `/file_sets...`), and only on `403` / `422` bodies carrying
+    # an `error` discriminator. The upload branch is further gated on a fixity
+    # discriminator ({FIXITY_CODES}), so a `422` on those paths with any other
+    # `error` (or `403`s on uploads, which stay raw) passes through untouched.
     # Everything else (other paths, other statuses, a `422` whose body uses a
     # different discriminator such as `tombstone`'s `code: "has_live_children"`)
     # passes through untouched, so atlas_rb stays a thin Faraday binding that
     # translates only the wire signals callers genuinely need to discriminate.
     #
     # Mapping:
-    # - `403` (any covered path) → {AtlasRb::ForbiddenError} (`error`/`action`/`subject`)
+    # - `403` on a re-parent/linked/Compilation path → {AtlasRb::ForbiddenError}
     # - `422` on `.../parent` → {AtlasRb::ReparentError} (`error`/`resource_id`)
     # - `422` on `.../linked_members...` → {AtlasRb::LinkedMemberError}
     # - `422` on `/compilations...` → {AtlasRb::CompilationError}
+    # - `422` + a fixity discriminator on `/files...` / `/file_sets...` →
+    #   {AtlasRb::FixityMismatchError}
     class RaiseOnResourceError < Faraday::Middleware
+      # Upload-path `422` discriminators this middleware translates; any other
+      # `error` on those paths passes through (Atlas owns these as a wire contract).
+      FIXITY_CODES = %w[fixity_mismatch unsupported_digest_algorithm].freeze
+
       # @param env [Faraday::Env] the completed response environment.
-      # @raise [AtlasRb::ForbiddenError] on a 403 to a covered path.
+      # @raise [AtlasRb::ForbiddenError] on a 403 to a re-parent/linked/Compilation path.
       # @raise [AtlasRb::ReparentError] on a 422 to a re-parent path.
       # @raise [AtlasRb::LinkedMemberError] on a 422 to a linked-member path.
       # @raise [AtlasRb::CompilationError] on a 422 to a Compilation path.
+      # @raise [AtlasRb::FixityMismatchError] on a 422 + fixity discriminator to an upload path.
       # @return [void]
       def on_complete(env)
-        return unless env.status == 403 || env.status == 422
+        return unless [403, 422].include?(env.status)
 
         path        = env.url&.path.to_s
         reparent    = path.end_with?("/parent")
         linked      = path.include?("/linked_members")
         compilation = path.start_with?("/compilations")
-        return unless reparent || linked || compilation
+        upload      = path.start_with?("/files") || path.start_with?("/file_sets")
+        return unless reparent || linked || compilation || upload
 
         body = parse_json(env.body)
         return unless body.is_a?(Hash) && body["error"]
 
         if env.status == 403
+          # 403s on upload paths stay raw — acting-as/authz isn't an upload concern here.
+          return unless reparent || linked || compilation
+
           raise AtlasRb::ForbiddenError.new(
             body["message"] || "Atlas refused the request",
             code: body["error"],
@@ -66,9 +80,15 @@ module AtlasRb
             code: body["error"],
             resource_id: body["resource_id"]
           )
-        else
+        elsif compilation
           raise AtlasRb::CompilationError.new(
             body["message"] || "Atlas rejected the compilation write",
+            code: body["error"],
+            resource_id: body["resource_id"]
+          )
+        elsif FIXITY_CODES.include?(body["error"])
+          raise AtlasRb::FixityMismatchError.new(
+            body["message"] || "Atlas rejected the upload (fixity)",
             code: body["error"],
             resource_id: body["resource_id"]
           )
