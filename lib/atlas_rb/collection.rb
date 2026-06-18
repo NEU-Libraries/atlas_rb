@@ -44,6 +44,9 @@ module AtlasRb
     # @param xml_path [String, nil] optional path to a MODS XML file used to
     #   seed metadata. When given, the Collection is created and immediately
     #   patched with the metadata in the file.
+    # @param featured [Boolean] mark the Collection as a genre-showcase
+    #   ("Featured") Collection. Defaults to false. Use when provisioning a
+    #   Community's showcase set (loop create + featured: true).
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
@@ -53,16 +56,37 @@ module AtlasRb
     # @return [Hash] the created Collection payload (post-update if
     #   `xml_path` was supplied).
     #
-    # @example
-    #   AtlasRb::Collection.create("c-123", "/tmp/collection-mods.xml")
-    def self.create(id, xml_path = nil, nuid: nil, on_behalf_of: nil)
+    # @example A featured showcase collection
+    #   AtlasRb::Collection.create("c-123", featured: true)
+    def self.create(id, xml_path = nil, featured: false, nuid: nil, on_behalf_of: nil)
       result = AtlasRb::Mash.new(JSON.parse(
-        connection({ parent_id: id }, nuid, on_behalf_of: on_behalf_of).post(ROUTE)&.body
+        connection({ parent_id: id, featured: featured }, nuid, on_behalf_of: on_behalf_of).post(ROUTE)&.body
       ))["collection"]
       return result unless xml_path.present?
 
       update(result["id"], xml_path, nuid: nuid, on_behalf_of: on_behalf_of)
       find(result["id"], nuid: nuid, on_behalf_of: on_behalf_of)
+    end
+
+    # Toggle the showcase "Featured" flag on an existing Collection.
+    #
+    # A resource-attribute write (not a MODS update), so it does not touch
+    # descriptive metadata. Cerberus reads the projected `featured_bsi` to
+    # badge the Collection in a community's browse.
+    #
+    # @param id [String] the Collection ID.
+    # @param featured [Boolean] the new flag value.
+    # @param nuid [String, nil] optional acting user's NUID.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when omitted.
+    # @return [AtlasRb::Mash] the updated `"collection"` object, already unwrapped.
+    #
+    # @example
+    #   AtlasRb::Collection.set_featured("col-456", true)
+    def self.set_featured(id, featured, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({ featured: featured }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)&.body
+      ))["collection"]
     end
 
     # Move a Collection to a different parent Community.
