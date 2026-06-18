@@ -7,28 +7,49 @@ module AtlasRb
   # `users.name` is frequently wrong and is clobbered on every login), plus
   # community affiliations.
   #
-  # Addressed by NUID, not NOID — the NUID is the correlation key consumers
-  # hold. So the positional `id` argument below is the person's **NUID**, and
-  # the `nuid:` / `on_behalf_of:` keywords keep their usual gem meaning (the
-  # acting principal). The one exception is {.create}, whose `nuid:` keyword is
-  # the *new person's* NUID (matching the gap's signature); the acting principal
-  # there comes from the ambient `AtlasRb.config.default_nuid`.
+  # Addressed by **NOID** (like Work/Collection) — the staff-facing NUID is kept
+  # server-side and never put in a public URL. So the positional `id` argument
+  # below is the person's **NOID**, and the `nuid:` / `on_behalf_of:` keywords
+  # keep their usual gem meaning (the acting principal). NUID stays the key only
+  # for {.create} (one Person per NUID — and there `nuid:` is the *new person's*
+  # NUID, acting principal coming from the ambient `AtlasRb.config.default_nuid`)
+  # and {.resolve} (the server-side name-resolution batch). {.list} is the
+  # NOID-keyed People-index source.
   #
   # Create / update / affiliation writes are :system + admin on the server; a
   # non-privileged caller gets a 403.
   class Person < Resource
     ROUTE = "/people/"
 
-    # Fetch a Person by NUID.
+    # Fetch a Person by NOID.
     #
-    # @param id [String] the person's NUID.
+    # @param id [String] the person's NOID.
     # @param nuid [String, nil] acting principal (signed into the assertion sub).
     # @param on_behalf_of [String, nil] acting-as target.
-    # @return [AtlasRb::Mash] the unwrapped `"person"` object.
+    # @return [AtlasRb::Mash] the unwrapped `"person"` object (carries the
+    #   server-side `nuid` for callers that need it, e.g. depositor gating).
     def self.find(id, nuid: nil, on_behalf_of: nil)
       AtlasRb::Mash.new(JSON.parse(
         connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
       ))["person"]
+    end
+
+    # List people — the NOID-keyed People-index source. Returns the page's
+    # Persons (each with `noid`, `display_name`, and the server-side `nuid`), so
+    # a consumer builds the index and profiles entirely through atlas_rb without
+    # routing People through the catalog/Solr or exposing a NUID publicly.
+    #
+    # @param page [Integer, nil] 1-based page (server default when nil).
+    # @param per_page [Integer, nil] page size (server default when nil; capped
+    #   server-side).
+    # @param nuid [String, nil] acting principal.
+    # @param on_behalf_of [String, nil] acting-as target.
+    # @return [Array<AtlasRb::Mash>] one unwrapped `"person"` per row on the page.
+    def self.list(page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
+      params = { page: page, per_page: per_page }.compact
+      JSON.parse(
+        connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE)&.body
+      )["people"].map { |entry| AtlasRb::Mash.new(entry["person"]) }
     end
 
     # Batch-resolve people to their authoritative display_name in one call
@@ -64,7 +85,7 @@ module AtlasRb
     # Edit a Person's authority fields. NUID is immutable and not patchable.
     # Only supplied fields are changed.
     #
-    # @param id [String] the person's NUID.
+    # @param id [String] the person's NOID.
     # @param display_name [String, nil]
     # @param bio [String, nil]
     # @param orcid [String, nil]
@@ -81,7 +102,7 @@ module AtlasRb
 
     # Add a community affiliation (idempotent; audited server-side).
     #
-    # @param id [String] the person's NUID.
+    # @param id [String] the person's NOID.
     # @param community_id [String] the community's NOID.
     # @param nuid [String, nil] acting principal.
     # @param on_behalf_of [String, nil] acting-as target.
@@ -96,7 +117,7 @@ module AtlasRb
 
     # Remove a community affiliation (tolerant; audited server-side).
     #
-    # @param id [String] the person's NUID.
+    # @param id [String] the person's NOID.
     # @param community_id [String] the community's NOID.
     # @param nuid [String, nil] acting principal.
     # @param on_behalf_of [String, nil] acting-as target.
