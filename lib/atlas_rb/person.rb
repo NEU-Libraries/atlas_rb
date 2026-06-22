@@ -5,7 +5,14 @@ module AtlasRb
   # directory. A Person correlates the several `users` rows that share a NUID
   # and carries the authoritative, librarian-editable `display_name` (the SSO
   # `users.name` is frequently wrong and is clobbered on every login), plus
-  # community affiliations.
+  # community affiliations and a stable **personal-root Collection**.
+  #
+  # The returned Mash carries `personal_root_id` — the **NOID** of that personal
+  # root, the structural parent the weighted-deposit publish conduit writes the
+  # person's own Works under (then linked into a community showcase via
+  # {Work.add_linked_member}). Atlas mints it eagerly at create, so it is always
+  # present on a Person; read it straight off the resolve/find Mash, e.g.
+  # `AtlasRb::Work.create(person["personal_root_id"], depositor: person["nuid"])`.
   #
   # Addressed by **NOID** (like Work/Collection) — the staff-facing NUID is kept
   # server-side and never put in a public URL. So the positional `id` argument
@@ -27,7 +34,8 @@ module AtlasRb
     # @param nuid [String, nil] acting principal (signed into the assertion sub).
     # @param on_behalf_of [String, nil] acting-as target.
     # @return [AtlasRb::Mash] the unwrapped `"person"` object (carries the
-    #   server-side `nuid` for callers that need it, e.g. depositor gating).
+    #   server-side `nuid` for callers that need it, e.g. depositor gating, and
+    #   `personal_root_id` for the publish-conduit parent).
     def self.find(id, nuid: nil, on_behalf_of: nil)
       AtlasRb::Mash.new(JSON.parse(
         connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
@@ -35,8 +43,9 @@ module AtlasRb
     end
 
     # List people — the NOID-keyed People-index source. Returns the page's
-    # Persons (each with `noid`, `display_name`, and the server-side `nuid`), so
-    # a consumer builds the index and profiles entirely through atlas_rb without
+    # Persons (each with `noid`, `display_name`, the server-side `nuid`, and
+    # `personal_root_id`), so a consumer builds the index and profiles entirely
+    # through atlas_rb without
     # routing People through the catalog/Solr or exposing a NUID publicly.
     #
     # @param page [Integer, nil] 1-based page (server default when nil).
@@ -54,11 +63,14 @@ module AtlasRb
 
     # Batch-resolve people to their authoritative display_name in one call
     # (supersedes the SSO users directory's resolve). Unresolved NUIDs drop.
+    # The deposit fork reads `affiliated_community_ids` and `personal_root_id`
+    # off the same resolve Mash it already makes for the depositor's Person.
     #
     # @param nuids [Array<String>] the NUIDs to resolve.
     # @param nuid [String, nil] acting principal.
     # @param on_behalf_of [String, nil] acting-as target.
-    # @return [Array<AtlasRb::Mash>] one unwrapped `"person"` per resolved NUID.
+    # @return [Array<AtlasRb::Mash>] one unwrapped `"person"` per resolved NUID
+    #   (each carries `nuid`, `affiliated_community_ids`, and `personal_root_id`).
     def self.resolve(nuids, nuid: nil, on_behalf_of: nil)
       JSON.parse(
         connection({ nuids: Array(nuids).join(",") }, nuid, on_behalf_of: on_behalf_of).get(ROUTE)&.body
