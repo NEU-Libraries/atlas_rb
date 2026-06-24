@@ -62,4 +62,87 @@ RSpec.describe AtlasRb::Blob do
       expect(@opened).to be_closed
     end
   end
+
+  describe ".update" do
+    def stub_patch(expected_kwargs)
+      conn = instance_double(Faraday::Connection)
+      allow(conn).to receive(:patch).and_return(
+        instance_double(Faraday::Response, body: '{"blob":{"id":"b-1","digest":"sha512:ff"}}')
+      )
+      expect(described_class).to receive(:multipart).with(nil, **expected_kwargs).and_return(conn)
+      capture_opened_io
+    end
+
+    it "threads idempotency_key through to multipart (replay-safe replace)" do
+      stub_patch(on_behalf_of: nil, idempotency_key: "k-9")
+
+      described_class.update("b-1", tmp.path, idempotency_key: "k-9")
+
+      expect(@opened).to be_closed
+    end
+
+    it "omits the key when not supplied" do
+      stub_patch(on_behalf_of: nil, idempotency_key: nil)
+
+      described_class.update("b-1", tmp.path)
+
+      expect(@opened).to be_closed
+    end
+  end
+
+  # The version read surface: thin Faraday wrappers, asserted on URL shape and
+  # return unwrapping without a round-trip (the JSON connection is stubbed).
+  describe "version read surface" do
+    def stub_connection
+      conn = instance_double(Faraday::Connection)
+      expect(described_class).to receive(:connection)
+        .with({}, nil, on_behalf_of: nil).and_return(conn)
+      conn
+    end
+
+    describe ".versions" do
+      it "GETs /files/:id/versions and returns the envelope unwrapped" do
+        conn = stub_connection
+        expect(conn).to receive(:get).with("/files/b-1/versions").and_return(
+          instance_double(Faraday::Response,
+                          body: '{"blob_id":"b-1","versions":[{"version_id":"v5","digest":"sha512:ff"}]}')
+        )
+
+        envelope = described_class.versions("b-1")
+        expect(envelope["blob_id"]).to eq("b-1")
+        expect(envelope["versions"].first["version_id"]).to eq("v5")
+      end
+    end
+
+    describe ".rollback" do
+      it "POSTs the version_id and returns the updated blob unwrapped" do
+        conn = stub_connection
+        expect(conn).to receive(:post)
+          .with("/files/b-1/rollback", JSON.dump(version_id: "v1"))
+          .and_return(instance_double(Faraday::Response, body: '{"blob":{"id":"b-1","digest":"sha512:aa"}}'))
+
+        blob = described_class.rollback("b-1", "v1")
+        expect(blob["id"]).to eq("b-1")
+        expect(blob["digest"]).to eq("sha512:aa")
+      end
+    end
+
+    describe ".version_content" do
+      it "streams chunks from the version-pinned content URL" do
+        conn = stub_connection
+        options = Struct.new(:on_data).new
+        req = double("req", options: options)
+        env = double("env", response_headers: { "content-type" => "application/pdf" })
+        expect(conn).to receive(:get).with("/files/b-1/versions/v1/content") do |&blk|
+          blk.call(req)
+          options.on_data.call("chunk-bytes", 11, env)
+        end
+
+        chunks = []
+        headers = described_class.version_content("b-1", "v1") { |c| chunks << c }
+        expect(chunks).to eq(["chunk-bytes"])
+        expect(headers["content-type"]).to eq("application/pdf")
+      end
+    end
+  end
 end

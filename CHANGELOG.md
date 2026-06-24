@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.7.0
+
+### Added — binary version read surface (`Blob.versions` / `version_content` / `rollback`)
+
+The binary counterpart to `Resource.mods_versions` / `mods_version`. Replacing a
+file (`Blob.update`) already retains prior bytes in OCFL; these bindings make the
+retained versions addressable:
+
+- `Blob.versions(id)` → `GET /files/:id/versions` — reverse-chronological
+  envelope (`{ "blob_id", "versions" }`), one descriptor per retained content
+  revision (`version_id`, `file_identifier`, `created`, `digest`, `size`,
+  `original_filename`, plus correlated `actor_nuid` / `on_behalf_of_nuid`).
+  Admin-gated by the server.
+- `Blob.version_content(id, version_id, &chunk_handler)` →
+  `GET /files/:id/versions/:version_id/content` — streams a prior version's
+  bytes through a block, exactly like `Blob.content`.
+- `Blob.rollback(id, version_id)` → `POST /files/:id/rollback` — reinstates a
+  prior version by appending its bytes as a new revision (non-destructive; NOID
+  preserved).
+
+### Added — `Blob.update` accepts `idempotency_key:`
+
+`Blob.update` (`PATCH /files/:id`) now takes an optional `idempotency_key:`,
+threaded as the `Idempotency-Key` header (same semantics as `Blob.create` /
+`FileSet.create`). A double-submitted replace sharing a key returns the existing
+Blob instead of minting a second OCFL version.
+
 ## 1.5.0
 
 ### Added — optional auth for `Reset.clean`

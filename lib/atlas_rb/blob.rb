@@ -153,6 +153,10 @@ module AtlasRb
     # @param blob_path [String] path to the replacement binary on disk.
     # @param expected_digest [String, nil] optional verify-on-ingest checksum,
     #   `"<algorithm>:<hexvalue>"`. 422 ({AtlasRb::FixityMismatchError}) on mismatch.
+    # @param idempotency_key [String, nil] optional UUID. A double-submit of the
+    #   replace with the same key returns the existing Blob instead of minting a
+    #   second OCFL version — without it a retried replace appends a duplicate
+    #   revision. See {AtlasRb::Work.create} for full semantics.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
@@ -168,15 +172,123 @@ module AtlasRb
     #
     # @example
     #   AtlasRb::Blob.update("b-321", "/tmp/revised.pdf")
-    def self.update(id, blob_path, expected_digest: nil, nuid: nil, on_behalf_of: nil)
+    #
+    # @example Retry-safe replace
+    #   AtlasRb::Blob.update("b-321", "/tmp/revised.pdf", idempotency_key: SecureRandom.uuid)
+    def self.update(id, blob_path, expected_digest: nil, idempotency_key: nil, nuid: nil, on_behalf_of: nil)
       with_file_part(blob_path) do |part|
         payload = { binary: part }
         payload[:expected_digest] = expected_digest if expected_digest
 
         AtlasRb::Mash.new(JSON.parse(
-          multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)&.body
+          multipart(nuid, on_behalf_of: on_behalf_of, idempotency_key: idempotency_key)
+            .patch(ROUTE + id, payload)&.body
         ))
       end
+    end
+
+    # List a Blob's retained binary version history.
+    #
+    # Wraps Atlas's `GET /files/<id>/versions` — the binary counterpart to
+    # {Resource.mods_versions}. Returns a reverse-chronological (newest first)
+    # envelope: one descriptor per retained content revision, each carrying its
+    # OCFL `version_id` label, the `file_identifier` appended for that revision,
+    # the `created` timestamp, the `digest`/`size` recorded at that version,
+    # the stable `original_filename`, and actor attribution (`actor_nuid` /
+    # `on_behalf_of_nuid`, null when no audit event correlates).
+    #
+    # Server admin-gates this endpoint (it exposes edit attribution), so
+    # `401` / `403` surface as raw Faraday responses, matching
+    # {Resource.mods_versions}. An unknown Blob id yields a `404`.
+    #
+    # @param id [String] the Blob ID.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [AtlasRb::Mash] the parsed envelope, with `"blob_id"` and a
+    #   `"versions"` array (reverse chronological).
+    #
+    # @example
+    #   history = AtlasRb::Blob.versions("b-321")
+    #   history["versions"].first["version_id"] # => "v5"
+    #   history["versions"].first["digest"]      # => "sha512:9f86d0…"
+    def self.versions(id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/versions")&.body
+      ))
+    end
+
+    # Stream the bytes of a *prior* version of a Blob through a block.
+    #
+    # Wraps `GET /files/<id>/versions/<version_id>/content` — the version-pinned
+    # twin of {.content}, and the read half of "download the superseded file".
+    # Like {.content}, the body is **not** buffered: each chunk is yielded to
+    # `chunk_handler` immediately (safe for files larger than memory), and the
+    # response headers are captured and returned.
+    #
+    # Pass a `version_id` obtained from {.versions} (an opaque OCFL `vN` label);
+    # only labels the history surfaced are addressable. An unknown id or version
+    # yields a `404` (raw Faraday response).
+    #
+    # @param id [String] the Blob ID.
+    # @param version_id [String] an OCFL version label from {.versions}, e.g. `"v1"`.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @yieldparam chunk [String] the next chunk of binary data.
+    # @return [Hash] the response headers from the version-content request.
+    #
+    # @example Download a superseded version to disk
+    #   File.open("/tmp/old.pdf", "wb") do |f|
+    #     AtlasRb::Blob.version_content("b-321", "v1") { |chunk| f.write(chunk) }
+    #   end
+    def self.version_content(id, version_id, nuid: nil, on_behalf_of: nil, &chunk_handler)
+      headers = {}
+      connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/versions/#{version_id}/content") do |req|
+        req.options.on_data = proc do |chunk, _bytes_received, env|
+          headers = env.response_headers if headers.empty? && env
+          chunk_handler.call(chunk)
+        end
+      end
+      headers
+    end
+
+    # Roll a Blob back to a prior version.
+    #
+    # Wraps `POST /files/<id>/rollback`. Atlas promotes the given version to
+    # current by appending its bytes again as a NEW revision — so rollback is
+    # itself non-destructive (it becomes vN+1 with the bytes of vN) and the Blob
+    # NOID is preserved. OCFL dedups the identical content, so no bytes are
+    # recopied. Avoids a full round-trip of the bytes back through the caller
+    # (vs. re-streaming {.version_content} into {.update}).
+    #
+    # Pass a `version_id` obtained from {.versions}. An unknown id or version
+    # yields a `404` (raw Faraday response).
+    #
+    # @param id [String] the Blob ID.
+    # @param version_id [String] the OCFL version label to reinstate, e.g. `"v1"`.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [AtlasRb::Mash] the updated `"blob"` payload (NOID unchanged,
+    #   `"digest"` refreshed to the reinstated bytes).
+    #
+    # @example
+    #   AtlasRb::Blob.rollback("b-321", "v1")
+    def self.rollback(id, version_id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .post("#{ROUTE}#{id}/rollback", JSON.dump(version_id: version_id))&.body
+      ))['blob']
     end
   end
 end
