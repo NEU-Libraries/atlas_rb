@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    atlas_rb (1.6.6)
+    atlas_rb (1.7.0)
       faraday (~> 2.7)
       faraday-follow_redirects (~> 0.3.0)
       faraday-multipart (~> 1)
@@ -25,7 +25,7 @@ GEM
       net-http (~> 0.5)
     hashie (5.1.0)
       logger
-    json (2.19.9)
+    json (2.20.0)
     jwt (2.10.3)
       base64
     logger (1.7.0)
