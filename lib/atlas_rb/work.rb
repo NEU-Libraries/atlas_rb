@@ -344,6 +344,42 @@ module AtlasRb
       ))
     end
 
+    # Store a Work's derived full-document text for search indexing.
+    #
+    # Purpose-specific PATCH in the same "machine-set derived metadata" family
+    # as {.set_thumbnails} / {.set_image_derivatives}. Hand Atlas the Work-level
+    # aggregate of the extracted body text (the concatenation of the Work's
+    # content FileSets' text); Atlas stores it as the Work's derived `full_text`
+    # and its `FullTextIndexer` projects it onto the Work's Solr doc
+    # (`all_text_timv`) for body-text search + the "Full Text Match" snippet.
+    #
+    # Distinct from {.metadata} — this is a machine-extracted search aid
+    # (pdftotext / Tika in a Cerberus job), not user-authored descriptive
+    # content, and is re-sent on any re-ingest. Empty/blank text clears it.
+    #
+    # @param id [String] the Work ID.
+    # @param text [String] the extracted plain text (Work-level aggregate).
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [AtlasRb::Mash] the parsed JSON response (the Work; the stored text
+    #   is not echoed back — it's read only through Solr).
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
+    #
+    # @example
+    #   AtlasRb::Work.set_full_text("w-789", text: extracted_pdf_text)
+    def self.set_full_text(id, text:, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .patch(ROUTE + id + '/full_text', JSON.dump(text: text))&.body
+      ))
+    end
+
     # List the assets attached to a Work — {Blob}s and {Delegate}s alike.
     #
     # Useful for building download UIs — the response includes enough to

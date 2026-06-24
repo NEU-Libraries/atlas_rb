@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.0
+
+### Added — `Work.set_full_text` (full-text search seam)
+
+`Work.set_full_text(id, text:)` → `PATCH /works/:id/full_text`. Hands Atlas the
+Work-level aggregate of Cerberus-extracted document text; Atlas stores it as the
+Work's derived `full_text` and projects it onto the Work's Solr doc
+(`all_text_timv`) for body-text search and the "Full Text Match" snippet. Same
+"machine-set derived metadata" family as `set_thumbnails` / `set_image_derivatives`
+— a regenerable search aid re-sent on any re-ingest, not user-authored content.
+
 ## 1.7.0
 
 ### Added — binary version read surface (`Blob.versions` / `version_content` / `rollback`)
