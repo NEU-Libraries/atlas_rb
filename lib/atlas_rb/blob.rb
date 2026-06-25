@@ -39,6 +39,49 @@ module AtlasRb
       ))['blob']
     end
 
+    # Resolve a content Blob to its parent FileSet and containing Work noids.
+    #
+    # Wraps `GET /files/<id>/ancestry`. The download path is keyed only by the
+    # blob id, so a consumer recording a download/stream impression against the
+    # containing Work resolves it here — instead of threading the work noid
+    # through the download URL. Reads on the Blob floor (no admin gate). An
+    # unknown id yields a `404` (raw Faraday response); either value is `nil`
+    # when unresolvable (e.g. an orphan blob with no FileSet parent).
+    #
+    # @param id [String] the Blob ID.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [AtlasRb::Mash] `{ "file_set" => "<noid>", "work" => "<noid>" }`
+    #   (either value `nil` when unresolvable).
+    #
+    # @example
+    #   AtlasRb::Blob.ancestry("b-321")
+    #   # => { "file_set" => "fs-654", "work" => "w-789" }
+    def self.ancestry(id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/ancestry")&.body
+      ))
+    end
+
+    # Convenience over {.ancestry}: the containing Work's noid for a content
+    # Blob (or `nil` when unresolvable). The shape Cerberus's impression-capture
+    # job wants — roll a download up to its Work from the blob id alone.
+    #
+    # @param id [String] the Blob ID.
+    # @param nuid [String, nil] optional acting user's NUID (see {.ancestry}).
+    # @param on_behalf_of [String, nil] optional `On-Behalf-Of` NUID (see {.ancestry}).
+    # @return [String, nil] the containing Work's noid, or `nil` when unresolvable.
+    #
+    # @example
+    #   AtlasRb::Blob.work("b-321") # => "w-789"
+    def self.work(id, nuid: nil, on_behalf_of: nil)
+      ancestry(id, nuid: nuid, on_behalf_of: on_behalf_of)['work']
+    end
+
     # Stream the Blob's binary content through a caller-supplied block.
     #
     # The body is **not** buffered — each chunk Faraday receives is yielded
