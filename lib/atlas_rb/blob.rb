@@ -86,10 +86,18 @@ module AtlasRb
     #
     # The body is **not** buffered — each chunk Faraday receives is yielded
     # to `chunk_handler` immediately, making this safe for files larger than
-    # available memory. The first chunk's response headers are captured and
-    # returned so callers can inspect `Content-Type`, `Content-Length`, etc.
+    # available memory.
+    #
+    # Pass `range:` (e.g. `"bytes=0-1048575"`) to forward an HTTP `Range`
+    # header; Atlas answers `206 Partial Content` and the chunks yielded are
+    # just the requested slice. The returned hash exposes both the response
+    # **status** (200 vs 206) and the response **headers** — so a caller
+    # proxying to a browser media element can relay `Content-Range`,
+    # `Content-Length` and `Accept-Ranges` verbatim and reproduce the 206.
     #
     # @param id [String] the Blob ID.
+    # @param range [String, nil] optional HTTP byte range (`"bytes=START-END"`,
+    #   `"bytes=START-"`, or `"bytes=-SUFFIX"`). Omitted ⇒ whole-body `200`.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
@@ -97,22 +105,25 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @yieldparam chunk [String] the next chunk of binary data.
-    # @return [Hash] the response headers from `GET /files/<id>/content`.
+    # @return [Hash] `{ status: Integer, headers: Faraday::Utils::Headers }` for
+    #   `GET /files/<id>/content` (`headers` is case-insensitive, hash-like).
     #
-    # @example Stream to disk
+    # @example Stream the whole body to disk
     #   File.open("/tmp/out.pdf", "wb") do |f|
-    #     headers = AtlasRb::Blob.content("b-321") { |chunk| f.write(chunk) }
-    #     puts headers["content-type"]
+    #     res = AtlasRb::Blob.content("b-321") { |chunk| f.write(chunk) }
+    #     puts res[:headers]["content-type"]
     #   end
-    def self.content(id, nuid: nil, on_behalf_of: nil, &chunk_handler)
-      headers = {}
-      connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/content") do |req|
-        req.options.on_data = proc do |chunk, _bytes_received, env|
-          headers = env.response_headers if headers.empty? && env
-          chunk_handler.call(chunk)
-        end
+    #
+    # @example Relay a browser's Range request as a 206
+    #   res = AtlasRb::Blob.content("b-321", range: "bytes=0-1048575") { |c| out << c }
+    #   res[:status]                       # => 206
+    #   res[:headers]["content-range"]     # => "bytes 0-1048575/52428800"
+    def self.content(id, range: nil, nuid: nil, on_behalf_of: nil, &chunk_handler)
+      response = connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/content") do |req|
+        req.headers["Range"] = range if range
+        req.options.on_data = proc { |chunk, _bytes_received, _env| chunk_handler.call(chunk) }
       end
-      headers
+      { status: response.status, headers: response.headers }
     end
 
     # Upload a new Blob attached to a Work.
