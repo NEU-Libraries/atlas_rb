@@ -32,17 +32,20 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Hash{String => String, Hash}] hash with two keys:
+    # @return [Hash{String => String, Hash}, nil] hash with two keys, or `nil`
+    #   when the id resolves to nothing (`404`):
     #   - `"klass"` — the resource type, capitalized (e.g. `"Work"`).
     #   - `"resource"` — the resource payload as a Hash.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` (e.g. an
+    #   auth/validation error envelope), carrying Atlas's status + body.
     #
     # @example Polymorphic lookup
     #   AtlasRb::Resource.find("abc123")
     #   # => { "klass" => "Work", "resource" => { "id" => "abc123", "title" => "..." } }
     def self.find(id, nuid: nil, on_behalf_of: nil)
-      result = JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get('/resources/' + id)&.body
-      )
+      result = fetch_resource('/resources/' + id, nuid: nuid, on_behalf_of: on_behalf_of)
+      return nil if result.nil?
+
       AtlasRb::Mash.new("klass" => result.first[0].capitalize,
                         "resource" => result.first[1])
     end
@@ -242,5 +245,40 @@ module AtlasRb
           (kind.present? ? ".#{kind}" : '')
       )&.body
     end
+
+    # Shared read path behind every typed `find`: perform a single-resource
+    # `GET` and return the parsed JSON envelope, or `nil` when Atlas reports
+    # the resource is absent (`404`).
+    #
+    # Its job is to stop `find` from silently coercing an error *envelope*
+    # into `nil`. Atlas renders auth/validation failures as a JSON body
+    # (`{ "error" => ... }`, status 400/401/403/422); a naive
+    # `JSON.parse(body)["work"]` returns `nil` for the missing `"work"` key —
+    # losing the status and message, and surfacing as a baffling
+    # `NoMethodError` far from the cause. Mapping:
+    #
+    # - `404`             → `nil` (clean "not found"; also avoids the
+    #   `JSON::ParserError` the old code raised on the empty `head :not_found`
+    #   body).
+    # - any other non-2xx → {AtlasRb::ResourceError} carrying Atlas's status +
+    #   body, so the failure is attributable at the boundary.
+    # - `2xx`             → the parsed JSON Hash, for the caller to unwrap.
+    #
+    # @param path [String] the resource path to GET (e.g. `"/works/abc123"`).
+    # @param nuid [String, nil] optional acting user's NUID (see {find}).
+    # @param on_behalf_of [String, nil] optional `On-Behalf-Of` NUID (see {find}).
+    # @return [Hash, nil] the parsed JSON envelope, or `nil` on `404`.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404`.
+    # @api private
+    def self.fetch_resource(path, nuid: nil, on_behalf_of: nil)
+      resp = connection({}, nuid, on_behalf_of: on_behalf_of).get(path)
+      return nil if resp.status == 404
+      unless resp.success?
+        raise AtlasRb::ResourceError.new("GET #{path} → #{resp.status}: #{resp.body}", response: resp)
+      end
+
+      JSON.parse(resp.body)
+    end
+    private_class_method :fetch_resource
   end
 end

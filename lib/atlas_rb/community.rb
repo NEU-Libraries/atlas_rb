@@ -23,16 +23,17 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Hash] the `"community"` object from the JSON response,
-    #   already unwrapped.
+    # @return [Hash, nil] the `"community"` object from the JSON response,
+    #   already unwrapped, or `nil` when the Community does not exist (`404`).
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` (e.g. an
+    #   auth/validation error envelope), carrying Atlas's status + body.
     #
     # @example
     #   AtlasRb::Community.find("c-123")
     #   # => { "id" => "c-123", "title" => "College of Engineering", ... }
     def self.find(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
-      ))["community"]
+      body = fetch_resource(ROUTE + id, nuid: nuid, on_behalf_of: on_behalf_of)
+      body && AtlasRb::Mash.new(body)["community"]
     end
 
     # Create a new Community, optionally seeded with MODS metadata.

@@ -200,6 +200,50 @@ module AtlasRb
     end
   end
 
+  # Raised by the typed single-resource readers ({Resource.find} and the
+  # `Work` / `Collection` / `Community` / `FileSet` / `Person` / `Compilation`
+  # / `Blob` / `Delegate` overrides) when Atlas answers the `GET` with a
+  # non-2xx that is **not** a `404` — i.e. an error envelope
+  # (`{ "error" => ... }`, status 400/401/403/422) on what the caller treated
+  # as a plain read.
+  #
+  # Before this existed, `find` unwrapped the success body by a fixed key
+  # (`["work"]`, `["collection"]`, …); on an error envelope that key is
+  # absent, so `find` returned `nil` and silently discarded Atlas's status and
+  # message. The caller then dereferenced the `nil` far from the cause (the
+  # canonical symptom: `undefined method 'tombstoned' for nil`). This error
+  # keeps the failure **at the boundary**, carrying the status and body so the
+  # real cause (e.g. `… → 401: {"error":"invalid bearer token"}`) is
+  # attributable everywhere `find` is used.
+  #
+  # A genuine `404` is **not** this — it stays a clean `nil` return, since
+  # "not found" is a normal `find` outcome callers already nil-check.
+  #
+  # @note Authorization failures on the narrow re-parent / linked-member /
+  #   Compilation write paths surface as {ForbiddenError} via
+  #   {Middleware::RaiseOnResourceError}; this is the catch-all for the read
+  #   path, which that middleware intentionally does not cover.
+  class ResourceError < Error
+    # @return [Faraday::Response, nil] the originating response, when available.
+    attr_reader :response
+
+    # @return [Integer, nil] Atlas's HTTP status.
+    attr_reader :status
+
+    # @return [String, nil] Atlas's raw response body (the error envelope).
+    attr_reader :body
+
+    # @param message [String] human-readable failure description.
+    # @param response [Faraday::Response, nil] the originating response; its
+    #   status and body are captured for callers that rescue this.
+    def initialize(message, response: nil)
+      super(message)
+      @response = response
+      @status = response&.status
+      @body = response&.body
+    end
+  end
+
   # Raised when the transport has no way to authenticate a relay request:
   # neither `ATLAS_JWT` (BYO-JWT mode) nor a signing key
   # ({AtlasRb.config#assertion_signing_key}, relay-signing mode) is configured.

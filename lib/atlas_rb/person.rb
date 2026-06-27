@@ -33,13 +33,15 @@ module AtlasRb
     # @param id [String] the person's NOID.
     # @param nuid [String, nil] acting principal (signed into the assertion sub).
     # @param on_behalf_of [String, nil] acting-as target.
-    # @return [AtlasRb::Mash] the unwrapped `"person"` object (carries the
+    # @return [AtlasRb::Mash, nil] the unwrapped `"person"` object (carries the
     #   server-side `nuid` for callers that need it, e.g. depositor gating, and
-    #   `personal_root_id` for the publish-conduit parent).
+    #   `personal_root_id` for the publish-conduit parent), or `nil` when the
+    #   Person does not exist (`404`).
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` (e.g. an
+    #   auth/validation error envelope), carrying Atlas's status + body.
     def self.find(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
-      ))["person"]
+      body = fetch_resource(ROUTE + id, nuid: nuid, on_behalf_of: on_behalf_of)
+      body && AtlasRb::Mash.new(body)["person"]
     end
 
     # List people — the NOID-keyed People-index source. Returns the page's

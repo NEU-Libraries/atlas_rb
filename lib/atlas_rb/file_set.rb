@@ -23,14 +23,16 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Hash] the `"file_set"` object, already unwrapped.
+    # @return [Hash, nil] the `"file_set"` object, already unwrapped, or `nil`
+    #   when the FileSet does not exist (`404`).
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` (e.g. an
+    #   auth/validation error envelope), carrying Atlas's status + body.
     #
     # @example
     #   AtlasRb::FileSet.find("fs-001")
     def self.find(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
-      ))["file_set"]
+      body = fetch_resource(ROUTE + id, nuid: nuid, on_behalf_of: on_behalf_of)
+      body && AtlasRb::Mash.new(body)["file_set"]
     end
 
     # Create a new FileSet under a Work.

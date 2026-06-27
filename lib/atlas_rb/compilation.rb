@@ -38,19 +38,20 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Hash] the `"compilation"` object, already unwrapped — `id`,
+    # @return [Hash, nil] the `"compilation"` object, already unwrapped — `id`,
     #   `title`, `description`, `depositor`, the three recipe arrays
     #   (`included_collections`, `included_works`, `excluded_works`), the
-    #   ACL arrays, and timestamps.
+    #   ACL arrays, and timestamps — or `nil` when the Set does not exist (`404`).
     # @raise [AtlasRb::ForbiddenError] if the caller may not read this Set.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx (e.g. `401`),
+    #   carrying Atlas's status + body.
     #
     # @example
     #   AtlasRb::Compilation.find("c-123", nuid: "000000002")
     #   # => { "id" => "c-123", "title" => "Course readings", ... }
     def self.find(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
-      ))["compilation"]
+      body = fetch_resource(ROUTE + id, nuid: nuid, on_behalf_of: on_behalf_of)
+      body && AtlasRb::Mash.new(body)["compilation"]
     end
 
     # List Compilations, paginated (newest first), in one of three modes.

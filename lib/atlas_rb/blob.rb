@@ -23,20 +23,22 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Hash] the `"blob"` object, already unwrapped — typically
+    # @return [Hash, nil] the `"blob"` object, already unwrapped — typically
     #   includes `"id"`, `"original_filename"`, `"size"`, `"digest"` (the
     #   recorded fixity digest `"sha512:<hex>"`, or `nil` for a Blob with no
     #   held bytes — reconciliation compares this against the v1 manifest
-    #   without re-downloading), and a download URL.
+    #   without re-downloading), and a download URL — or `nil` when the Blob
+    #   does not exist (`404`).
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` (e.g. an
+    #   auth/validation error envelope), carrying Atlas's status + body.
     #
     # @example
     #   AtlasRb::Blob.find("b-321")
     #   # => { "id" => "b-321", "original_filename" => "scan.pdf",
     #   #      "digest" => "sha512:9f86d0…", ... }
     def self.find(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
-      ))['blob']
+      body = fetch_resource(ROUTE + id, nuid: nuid, on_behalf_of: on_behalf_of)
+      body && AtlasRb::Mash.new(body)['blob']
     end
 
     # Resolve a content Blob to its parent FileSet and containing Work noids.

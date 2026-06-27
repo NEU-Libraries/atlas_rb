@@ -22,16 +22,17 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header (acting-as / view-as). Falls through to
     #   {AtlasRb.config}.default_on_behalf_of when omitted.
-    # @return [Hash] the `"work"` object, already unwrapped from the JSON
-    #   response.
+    # @return [Hash, nil] the `"work"` object, already unwrapped from the JSON
+    #   response, or `nil` when the Work does not exist (`404`).
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` (e.g. an
+    #   auth/validation error envelope), carrying Atlas's status + body.
     #
     # @example
     #   AtlasRb::Work.find("w-789")
     #   # => { "id" => "w-789", "title" => "An Article", ... }
     def self.find(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id)&.body
-      ))["work"]
+      body = fetch_resource(ROUTE + id, nuid: nuid, on_behalf_of: on_behalf_of)
+      body && AtlasRb::Mash.new(body)["work"]
     end
 
     # List Works, paginated.

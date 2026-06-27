@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.8.3
+
+### Changed — `find` is status-aware (stops swallowing Atlas error envelopes)
+
+Every typed single-resource reader — `Resource.find` (the polymorphic resolver)
+and the `Work` / `Collection` / `Community` / `FileSet` / `Person` /
+`Compilation` / `Blob` / `Delegate` overrides — now routes through a shared
+status-aware read path instead of blindly `JSON.parse`-ing the body and
+unwrapping a fixed key.
+
+Previously, any non-2xx that wasn't a re-parent/linked-member/Compilation/upload
+signal (which `RaiseOnResourceError` already translates) passed straight through:
+Atlas renders its auth/validation failures as a JSON envelope (`{ "error" => …}`,
+status 400/401/403/422), so `JSON.parse(body)["work"]` found no `"work"` key and
+returned **`nil`**. Callers then dereferenced that `nil` far from the cause — the
+canonical symptom being `undefined method 'tombstoned' for nil`, a 500 surfaced
+nowhere near the request that actually failed.
+
+Now:
+
+- **`404` → `nil`** — a clean "not found" (and no more `JSON::ParserError` on the
+  empty `head :not_found` body, which is what a missing id used to raise).
+- **any other non-2xx → `AtlasRb::ResourceError`** — a new typed error carrying
+  Atlas's `status`, `body`, and `response`, raised **at the boundary** so the
+  real cause (e.g. `GET /works/abc → 401: {"error":"invalid bearer token"}`) is
+  attributable everywhere `find` is used.
+- **`2xx`** → unchanged (the unwrapped resource).
+
+Authorization failures on the narrow re-parent / linked-member / Compilation
+write paths still surface as `AtlasRb::ForbiddenError` via
+`RaiseOnResourceError`; `ResourceError` is the catch-all for the read path that
+middleware intentionally does not cover.
+
+**Behavior change to note:** `find` of a missing id now returns `nil` rather than
+raising `JSON::ParserError`. Callers that relied on the parse error (none known)
+should nil-check instead.
+
 ## 1.8.0
 
 ### Added — `Work.set_full_text` (full-text search seam)
