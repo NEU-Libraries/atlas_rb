@@ -235,7 +235,7 @@ module AtlasRb
   # Raised by the typed single-resource readers ({Resource.find} and the
   # `Work` / `Collection` / `Community` / `FileSet` / `Person` / `Compilation`
   # / `Blob` / `Delegate` overrides) when Atlas answers the `GET` with a
-  # non-2xx that is **not** a `404` — i.e. an error envelope
+  # non-2xx that is **not** a `404` or a `410` — i.e. an error envelope
   # (`{ "error" => ... }`, status 400/401/403/422) on what the caller treated
   # as a plain read.
   #
@@ -249,7 +249,10 @@ module AtlasRb
   # attributable everywhere `find` is used.
   #
   # A genuine `404` is **not** this — it stays a clean `nil` return, since
-  # "not found" is a normal `find` outcome callers already nil-check.
+  # "not found" is a normal `find` outcome callers already nil-check. A `410`
+  # is also **not** this — a tombstoned resource comes back as `410 Gone` with
+  # its full body, which `find` returns (the caller nil-checks / reads
+  # `tombstoned`), rather than an error to raise.
   #
   # @note Authorization failures on the narrow re-parent / linked-member /
   #   Compilation write paths surface as {ForbiddenError} via

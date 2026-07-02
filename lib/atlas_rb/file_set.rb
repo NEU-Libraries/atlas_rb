@@ -25,7 +25,7 @@ module AtlasRb
     #   omitted.
     # @return [Hash, nil] the `"file_set"` object, already unwrapped, or `nil`
     #   when the FileSet does not exist (`404`).
-    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` (e.g. an
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an
     #   auth/validation error envelope), carrying Atlas's status + body.
     #
     # @example

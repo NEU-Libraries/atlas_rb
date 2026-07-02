@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.8.5
+
+### Fixed — `find` returns a tombstone (`410`) instead of raising
+
+The status-aware `find` (1.8.3) raised `AtlasRb::ResourceError` on any non-2xx
+other than `404`. But Atlas returns a **tombstoned** resource as `410 Gone`
+**with its full body** (carrying `tombstoned` / `tombstoned_at` / `tombstoned_by`)
+— a "gone, but here it is" tombstone, not an error envelope. `fetch_resource`
+now parses a `410` like a `2xx`, so every typed `find` (`Work` / `Collection` /
+`Community` / `FileSet` / `Person` / `Compilation` / `Blob` / `Delegate` and the
+polymorphic `Resource.find`) yields the tombstone rather than raising. Genuine
+error statuses (400/401/403/422) still raise; a `404` still returns `nil`.
+
 ## 1.8.4
 
 ### Added — per-tier derivative-visibility policy (`Work.set_derivative_permissions`)

@@ -37,7 +37,7 @@ module AtlasRb
     #   server-side `nuid` for callers that need it, e.g. depositor gating, and
     #   `personal_root_id` for the publish-conduit parent), or `nil` when the
     #   Person does not exist (`404`).
-    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` (e.g. an
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an
     #   auth/validation error envelope), carrying Atlas's status + body.
     def self.find(id, nuid: nil, on_behalf_of: nil)
       body = fetch_resource(ROUTE + id, nuid: nuid, on_behalf_of: on_behalf_of)

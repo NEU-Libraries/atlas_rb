@@ -33,7 +33,7 @@ module AtlasRb
     #   includes `id`, `valkyrie_id`, `use`, `uri`, `mime_type`,
     #   `original_filename`, `label`, and tombstone fields — or `nil` when the
     #   Delegate does not exist (`404`).
-    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` (e.g. an
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an
     #   auth/validation error envelope), carrying Atlas's status + body.
     #
     # @example

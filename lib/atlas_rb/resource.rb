@@ -36,7 +36,7 @@ module AtlasRb
     #   when the id resolves to nothing (`404`):
     #   - `"klass"` — the resource type, capitalized (e.g. `"Work"`).
     #   - `"resource"` — the resource payload as a Hash.
-    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` (e.g. an
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an
     #   auth/validation error envelope), carrying Atlas's status + body.
     #
     # @example Polymorphic lookup
@@ -260,6 +260,10 @@ module AtlasRb
     # - `404`             → `nil` (clean "not found"; also avoids the
     #   `JSON::ParserError` the old code raised on the empty `head :not_found`
     #   body).
+    # - `410`             → the parsed JSON Hash. A tombstoned resource is
+    #   returned as `410 Gone` WITH its full body (carrying tombstoned /
+    #   tombstoned_at / tombstoned_by), so it is a returnable tombstone, not an
+    #   error envelope — `find` yields the tombstone rather than raising.
     # - any other non-2xx → {AtlasRb::ResourceError} carrying Atlas's status +
     #   body, so the failure is attributable at the boundary.
     # - `2xx`             → the parsed JSON Hash, for the caller to unwrap.
@@ -267,13 +271,19 @@ module AtlasRb
     # @param path [String] the resource path to GET (e.g. `"/works/abc123"`).
     # @param nuid [String, nil] optional acting user's NUID (see {find}).
     # @param on_behalf_of [String, nil] optional `On-Behalf-Of` NUID (see {find}).
-    # @return [Hash, nil] the parsed JSON envelope, or `nil` on `404`.
-    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404`.
+    # @return [Hash, nil] the parsed JSON envelope (incl. a `410` tombstone), or
+    #   `nil` on `404`.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`.
     # @api private
     def self.fetch_resource(path, nuid: nil, on_behalf_of: nil)
       resp = connection({}, nuid, on_behalf_of: on_behalf_of).get(path)
       return nil if resp.status == 404
-      unless resp.success?
+
+      # A tombstoned resource comes back as 410 Gone WITH its full body — a
+      # "gone, but here it is" tombstone, not an error envelope — so parse it
+      # like a 2xx and let callers read the tombstone. Only genuine error
+      # statuses raise.
+      unless resp.success? || resp.status == 410
         raise AtlasRb::ResourceError.new("GET #{path} → #{resp.status}: #{resp.body}", response: resp)
       end
 
