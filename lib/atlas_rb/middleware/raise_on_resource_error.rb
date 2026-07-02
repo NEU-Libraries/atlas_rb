@@ -16,8 +16,9 @@ module AtlasRb
     #
     # It is intentionally narrow — it only fires on the re-parent
     # (`.../parent`) and linked-member (`.../linked_members...`) write paths,
-    # the Compilation surface (`/compilations...`), and binary uploads
-    # (`/files...`, `/file_sets...`), and only on `403` / `422` bodies carrying
+    # the Compilation surface (`/compilations...`), the derivative-permissions
+    # write (`.../derivative_permissions`), and binary uploads (`/files...`,
+    # `/file_sets...`), and only on `403` / `422` bodies carrying
     # an `error` discriminator. The upload branch is further gated on a fixity
     # discriminator ({FIXITY_CODES}), so a `422` on those paths with any other
     # `error` (or `403`s on uploads, which stay raw) passes through untouched.
@@ -27,10 +28,11 @@ module AtlasRb
     # translates only the wire signals callers genuinely need to discriminate.
     #
     # Mapping:
-    # - `403` on a re-parent/linked/Compilation path → {AtlasRb::ForbiddenError}
+    # - `403` on a re-parent/linked/Compilation/derivative-permissions path → {AtlasRb::ForbiddenError}
     # - `422` on `.../parent` → {AtlasRb::ReparentError} (`error`/`resource_id`)
     # - `422` on `.../linked_members...` → {AtlasRb::LinkedMemberError}
     # - `422` on `/compilations...` → {AtlasRb::CompilationError}
+    # - `422` on `.../derivative_permissions` → {AtlasRb::DerivativePermissionsError}
     # - `422` + a fixity discriminator on `/files...` / `/file_sets...` →
     #   {AtlasRb::FixityMismatchError}
     class RaiseOnResourceError < Faraday::Middleware
@@ -43,6 +45,7 @@ module AtlasRb
       # @raise [AtlasRb::ReparentError] on a 422 to a re-parent path.
       # @raise [AtlasRb::LinkedMemberError] on a 422 to a linked-member path.
       # @raise [AtlasRb::CompilationError] on a 422 to a Compilation path.
+      # @raise [AtlasRb::DerivativePermissionsError] on a 422 to a derivative-permissions path.
       # @raise [AtlasRb::FixityMismatchError] on a 422 + fixity discriminator to an upload path.
       # @return [void]
       def on_complete(env)
@@ -52,15 +55,16 @@ module AtlasRb
         reparent    = path.end_with?("/parent")
         linked      = path.include?("/linked_members")
         compilation = path.start_with?("/compilations")
+        deriv_perms = path.end_with?("/derivative_permissions")
         upload      = path.start_with?("/files") || path.start_with?("/file_sets")
-        return unless reparent || linked || compilation || upload
+        return unless reparent || linked || compilation || deriv_perms || upload
 
         body = parse_json(env.body)
         return unless body.is_a?(Hash) && body["error"]
 
         if env.status == 403
           # 403s on upload paths stay raw — acting-as/authz isn't an upload concern here.
-          return unless reparent || linked || compilation
+          return unless reparent || linked || compilation || deriv_perms
 
           raise AtlasRb::ForbiddenError.new(
             body["message"] || "Atlas refused the request",
@@ -83,6 +87,12 @@ module AtlasRb
         elsif compilation
           raise AtlasRb::CompilationError.new(
             body["message"] || "Atlas rejected the compilation write",
+            code: body["error"],
+            resource_id: body["resource_id"]
+          )
+        elsif deriv_perms
+          raise AtlasRb::DerivativePermissionsError.new(
+            body["message"] || "Atlas rejected the derivative-permissions policy",
             code: body["error"],
             resource_id: body["resource_id"]
           )

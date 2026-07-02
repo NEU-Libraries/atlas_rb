@@ -345,6 +345,53 @@ module AtlasRb
       ))
     end
 
+    # Replace a Work's per-tier derivative-visibility policy.
+    #
+    # Sets which read groups may fetch the Work's sized image derivatives —
+    # the `small` / `medium` / `large` / `service` (deep-zoom) tiers — reusing
+    # the resource read-group vocabulary (`"public"`, Grouper group names,
+    # `[]` = private). Unlike {.set_image_derivatives} (which upserts URIs) this
+    # is a whole-object REPLACE: the map you pass is the complete policy;
+    # omitted tiers inherit by cascade (an absent tier inherits the next
+    # lower-resolution tier; `small` inherits the Work's own visibility). Pass a
+    # tier as `[]` to make it private.
+    #
+    # Atlas enforces two invariants: a tier may not be more visible than the
+    # Work, and visibility must narrow as resolution grows
+    # (`service` ⊆ `large` ⊆ `medium` ⊆ `small`). The gate is advisory — it
+    # surfaces per Delegate on {.assets} as `gated` / `permission` for the
+    # display layer (Cerberus / the IIIF auth service) to enforce.
+    #
+    # @param id [String] the Work ID.
+    # @param policy [Hash] tier => Array(read groups), e.g.
+    #   `{ large: ["northeastern:drs:repository:archives"], service: [...] }`.
+    #   Keys may be strings or symbols; only `small` / `medium` / `large` /
+    #   `service` are recognized.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional On-Behalf-Of NUID.
+    # @return [AtlasRb::Mash] the updated Work; the stored map echoes back under
+    #   `derivative_permissions`.
+    # @raise [AtlasRb::DerivativePermissionsError] if Atlas rejects the policy
+    #   (422) — `tier_exceeds_resource` / `tier_ordering_violation` /
+    #   `unknown_tier` (see {#code}).
+    # @raise [AtlasRb::StaleResourceError] on an optimistic-lock conflict (409).
+    #
+    # @example
+    #   AtlasRb::Work.set_derivative_permissions(
+    #     "w-789",
+    #     policy: { small:   ["public"],
+    #               large:   ["northeastern:drs:repository:archives"],
+    #               service: ["northeastern:drs:repository:archives"] }
+    #   )
+    def self.set_derivative_permissions(id, policy:, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .patch(ROUTE + id + '/derivative_permissions', JSON.dump(policy))&.body
+      ))
+    end
+
     # Store a Work's derived full-document text for search indexing.
     #
     # Purpose-specific PATCH in the same "machine-set derived metadata" family

@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.8.4
+
+### Added — per-tier derivative-visibility policy (`Work.set_derivative_permissions`)
+
+New binding for the departmental "each download rendition has its own permissions"
+model: `AtlasRb::Work.set_derivative_permissions(id, policy:, …)` PATCHes a per-tier
+read policy to `PATCH /works/:id/derivative_permissions`. `policy` is a map of tier
+(`small` / `medium` / `large` / `service`) => array of read-group tokens (the resource
+vocabulary: `"public"`, Grouper group names, `[]` = private). Whole-object replace;
+omitted tiers inherit by cascade (an absent tier inherits the next lower-resolution
+tier; `small` inherits the Work). Atlas enforces two invariants — a tier may not be
+more visible than the Work, and visibility must narrow as resolution grows
+(`service` ⊆ `large` ⊆ `medium` ⊆ `small`).
+
+The effective per-Delegate gate surfaces on `Work.assets` entries as `gated` (must be
+authorized, not linked directly) and `permission` (the effective read-group set;
+`null` for guests). No `assets` change is needed — the new fields flow through the
+existing polymorphic Mash. The gate is advisory: Cerberus and the IIIF auth layer
+enforce it.
+
+A `422` rejection (`tier_exceeds_resource` / `tier_ordering_violation` /
+`unknown_tier`) now raises the typed `AtlasRb::DerivativePermissionsError` (with `code`
+/ `resource_id`) via `RaiseOnResourceError`, mirroring the re-parent / linked-member /
+Compilation mappings; a `403` raises `AtlasRb::ForbiddenError`; a `409` raises
+`AtlasRb::StaleResourceError`.
+
 ## 1.8.3
 
 ### Changed — `find` is status-aware (stops swallowing Atlas error envelopes)

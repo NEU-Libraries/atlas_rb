@@ -52,6 +52,28 @@ RSpec.describe AtlasRb::Middleware::RaiseOnResourceError do
     end
   end
 
+  describe "derivative-permissions path" do
+    it "raises DerivativePermissionsError on a 422 to .../derivative_permissions" do
+      conn = connection do |s|
+        s.patch("/works/w-1/derivative_permissions") do
+          [422, {}, '{"error":"tier_ordering_violation","resource_id":"w-1","message":"large may be no more visible than medium"}']
+        end
+      end
+      expect { conn.patch("/works/w-1/derivative_permissions") }
+        .to raise_error(AtlasRb::DerivativePermissionsError) do |e|
+          expect(e.code).to eq("tier_ordering_violation")
+          expect(e.resource_id).to eq("w-1")
+        end
+    end
+
+    it "raises ForbiddenError on a 403 to .../derivative_permissions" do
+      conn = connection do |s|
+        s.patch("/works/w-1/derivative_permissions") { [403, {}, '{"error":"forbidden","action":"update_derivative_permissions"}'] }
+      end
+      expect { conn.patch("/works/w-1/derivative_permissions") }.to raise_error(AtlasRb::ForbiddenError)
+    end
+  end
+
   describe "pre-existing mappings (regression)" do
     it "still raises ReparentError on a 422 to .../parent" do
       conn = connection do |s|

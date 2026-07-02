@@ -169,6 +169,38 @@ module AtlasRb
     end
   end
 
+  # Raised when Atlas rejects a per-tier derivative-visibility policy
+  # (`PATCH /works/:id/derivative_permissions`) with a `422` carrying a
+  # machine-readable `error` discriminator — `tier_exceeds_resource` (a tier
+  # more visible than its Work), `tier_ordering_violation` (visibility not
+  # narrowing as resolution grows), or `unknown_tier`.
+  #
+  # The derivative-permissions sibling of {ReparentError} / {LinkedMemberError};
+  # same shape, same rationale (the binding's `["work"]` unwrap would otherwise
+  # discard the envelope on the 422). Atlas rejects before persisting.
+  #
+  #   rescue AtlasRb::DerivativePermissionsError => e
+  #     flash.now[:alert] = t("derivative_permissions.errors.#{e.code}", default: e.message)
+  #
+  # @note Authorization failures surface as {ForbiddenError} (HTTP 403).
+  class DerivativePermissionsError < Error
+    # @return [String, nil] the machine-readable error code from the envelope,
+    #   suitable for keying an i18n map.
+    attr_reader :code
+
+    # @return [String, nil] the rejected Work's ID, from the envelope.
+    attr_reader :resource_id
+
+    # @param message [String] human-readable rejection description.
+    # @param code [String, nil] the envelope's `error` discriminator.
+    # @param resource_id [String, nil] the rejected Work's ID.
+    def initialize(message, code: nil, resource_id: nil)
+      super(message)
+      @code = code
+      @resource_id = resource_id
+    end
+  end
+
   # Raised when Atlas refuses a re-parent, linked-member, or Compilation
   # request with an HTTP `403`, whose envelope is
   # `{ "error", "action", "subject" }`. Lets callers distinguish "you may
