@@ -345,28 +345,37 @@ module AtlasRb
       ))
     end
 
-    # Replace a Work's per-tier derivative-visibility policy.
+    # Replace a Work's per-asset derivative-visibility policy.
     #
-    # Sets which read groups may fetch the Work's sized image derivatives —
-    # the `small` / `medium` / `large` / `service` (deep-zoom) tiers — reusing
-    # the resource read-group vocabulary (`"public"`, Grouper group names,
-    # `[]` = private). Unlike {.set_image_derivatives} (which upserts URIs) this
-    # is a whole-object REPLACE: the map you pass is the complete policy;
+    # Sets which read groups may fetch each of the Work's downloadable
+    # renditions, reusing the resource read-group vocabulary (`"public"`,
+    # Grouper group names, `[]` = private). Two media families:
+    #
+    # * the image ladder `small` / `medium` / `large` / `service` (deep-zoom) /
+    #   `master` (the original image), and
+    # * independent media `audio` / `video` / `pdf`.
+    #
+    # Unlike {.set_image_derivatives} (which upserts URIs) this is a whole-object
+    # REPLACE: the map you pass is the complete policy. Within the image ladder
     # omitted tiers inherit by cascade (an absent tier inherits the next
-    # lower-resolution tier; `small` inherits the Work's own visibility). Pass a
-    # tier as `[]` to make it private.
+    # lower-resolution tier; `small` inherits the Work's own visibility).
+    # Independent media do NOT cascade — an absent `audio`/`video`/`pdf` key
+    # rides the Work. Pass a tier as `[]` to make it private.
     #
-    # Atlas enforces two invariants: a tier may not be more visible than the
-    # Work, and visibility must narrow as resolution grows
-    # (`service` ⊆ `large` ⊆ `medium` ⊆ `small`). The gate is advisory — it
-    # surfaces per Delegate on {.assets} as `gated` / `permission` for the
-    # display layer (Cerberus / the IIIF auth service) to enforce.
+    # Atlas enforces: a tier may not be more visible than the Work, and — within
+    # the image ladder — visibility must narrow as resolution grows
+    # (`master` ⊆ `service` ⊆ `large` ⊆ `medium` ⊆ `small`; independent media
+    # impose no ordering). The gate is advisory — it surfaces on {.assets} as
+    # `gated` / `permission` for BOTH Delegate (image tier) and Blob (master /
+    # pdf / audio / video, classified by media type) entries, for the display
+    # layer (Cerberus / the IIIF auth service; Cerberus's download :read check)
+    # to enforce.
     #
     # @param id [String] the Work ID.
     # @param policy [Hash] tier => Array(read groups), e.g.
-    #   `{ large: ["northeastern:drs:repository:archives"], service: [...] }`.
-    #   Keys may be strings or symbols; only `small` / `medium` / `large` /
-    #   `service` are recognized.
+    #   `{ large: ["northeastern:drs:repository:archives"], master: [...] }`.
+    #   Keys may be strings or symbols; recognized keys are `small` / `medium` /
+    #   `large` / `service` / `master` / `audio` / `video` / `pdf`.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
@@ -436,6 +445,11 @@ module AtlasRb
     # `size`, while Delegate-backed entries carry `uri`. Callers should
     # duck-type on the field they need rather than expecting a single
     # schema.
+    #
+    # Every entry (Blob and Delegate) also carries the advisory read gate set
+    # via {.set_derivative_permissions}: `gated` (true if the asset must be
+    # authorized rather than fetched directly) and `permission` (the effective
+    # read-group set, or `nil` for guests, to whom group names are withheld).
     #
     # @param id [String] the Work ID.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
