@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.8.7
+
+### Added — personal-access token lifecycle (`System::Token.mint` / `.revoke`)
+
+New system-context binding for the `POST /nuid` / `DELETE /nuid` endpoints so a
+host app can mint and revoke a user's personal-access JWT (`ATLAS_JWT`, BYO-JWT
+mode). Both are :system-gated on Atlas ("minting for an arbitrary NUID is
+'become anyone'"), so they authenticate via `FaradayHelper#system_connection`
+(hard-pinned system token + `User: NUID` header) — never the ambient-user
+relay-signing path — mirroring `System::User`.
+
+- `AtlasRb::System::Token.mint(nuid:)` → the JWT (`String`), or `nil` when the
+  NUID has no Atlas User row (404). The token is full-privilege for that user,
+  1-week TTL, single-jti.
+- `AtlasRb::System::Token.revoke(nuid:)` → `true` on success (204), `false` on
+  404. Rotates the user's jti (single-jti model → all outstanding tokens die at
+  once). "Regenerate" is `revoke` followed by a fresh `mint`.
+
+Unblocks Cerberus's "My DRS → Programmatic access" section (generate / regenerate
+/ revoke), gated to the `northeastern:drs:repository:api` Grouper group.
+
 ## 1.8.5
 
 ### Fixed — `find` returns a tombstone (`410`) instead of raising
