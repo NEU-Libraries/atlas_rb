@@ -170,6 +170,38 @@ module AtlasRb
       ))
     end
 
+    # Fetch the CURRENT MODS of any Modsable resource by NOID — the polymorphic
+    # sibling of {Work.mods} / {Collection.mods} / {Community.mods}. Wraps
+    # `GET /resources/<id>/mods[.kind]` and returns the **raw response body**
+    # (not parsed), mirroring the typed wrappers. Lets a caller holding only a
+    # NOID (no type) fetch descriptive MODS in one call, instead of resolving
+    # the klass first to pick the typed route — e.g. a bulk Collection/Set MODS
+    # export that has bare member NOIDs from {Collection.children}.
+    #
+    # @param id [String] an Atlas resource ID (NOID).
+    # @param kind [String, nil] response-format extension: omit for the JSON
+    #   projection (the server default), or pass `"xml"` for MODS XML (`"json"`
+    #   / `"html"` also accepted). Output is byte-identical to the typed route
+    #   for the resolved type.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when omitted.
+    # @return [String, nil] the raw MODS body (XML or JSON per `kind`). The
+    #   server returns `404` (empty body) for an unknown id, a non-Modsable
+    #   resource, or one with no MODS.
+    #
+    # @example Bulk-export a Set's members' MODS without klass dispatch
+    #   AtlasRb::Collection.children(set_id).each do |noid|
+    #     xml = AtlasRb::Resource.mods(noid, "xml")
+    #   end
+    def self.mods(id, kind = nil, nuid: nil, on_behalf_of: nil)
+      connection({}, nuid, on_behalf_of: on_behalf_of).get(
+        '/resources/' + id + '/mods' + (kind.present? ? ".#{kind}" : '')
+      )&.body
+    end
+
     # List the retained MODS versions for a resource.
     #
     # Wraps Atlas's `GET /resources/<id>/mods/versions`, which returns the

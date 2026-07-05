@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.8.8
+
+### Added — type-agnostic current MODS (`Resource.mods`)
+
+New polymorphic wrapper `AtlasRb::Resource.mods(id, kind = nil, …)` for Atlas's
+`GET /resources/:id/mods` — fetch the current descriptive MODS of any Modsable
+resource (Work / Collection / Community) by NOID, without knowing its type.
+Returns the raw response body, mirroring the typed `Work.mods` / `Collection.mods`
+/ `Community.mods`; output is byte-identical to the typed routes. `kind` omitted
+yields the JSON projection (server default); pass `"xml"` for MODS XML.
+
+Collapses the `children → find_many (for klass) → dispatch-by-klass` two-step a
+bulk MODS exporter needed just to pick the typed MODS URL down to one call per
+member. `404` (unknown id / non-Modsable / no MODS) comes back as an empty body.
+
 ## 1.8.7
 
 ### Added — personal-access token lifecycle (`System::Token.mint` / `.revoke`)
