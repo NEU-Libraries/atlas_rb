@@ -36,9 +36,28 @@ module AtlasRb
   # If neither a signing key nor `ATLAS_JWT` is configured there is no relay
   # credential, so the transport raises {AtlasRb::ConfigurationError}.
   #
+  # ## Instrumentation
+  #
+  # Every builder brackets its request in an `ActiveSupport::Notifications`
+  # event named **`request.atlas_rb`** (Faraday's `:instrumentation`
+  # middleware, wired as the *outermost* handler so a redirect hop — e.g. the
+  # `/resources/:noid` NOID resolver — folds into one event per logical call
+  # rather than being double-counted). The payload is the Faraday `env`, so a
+  # subscriber reads `payload.method` / `payload.url` and the event's duration.
+  # This lets a host count/time Atlas round-trips (an N+1-over-HTTP detector)
+  # without reaching into gem internals. It is guarded on
+  # `defined?(ActiveSupport::Notifications)`: Rails hosts get the events; the
+  # headless BYO-JWT path (no AS loaded) is unaffected. With no subscriber
+  # attached the emit degrades to a listener lookup + `yield`, so it is safe to
+  # leave in the stack permanently — opt-in lives entirely on the consumer side.
+  #
   # The module is mixed in via `extend`, so its methods become class methods on
   # the host (e.g. `AtlasRb::Work.connection({})`).
   module FaradayHelper
+    # ActiveSupport::Notifications event name emitted per outbound Atlas request.
+    # A dedicated name (not Faraday's default `request.faraday`) so a host that
+    # also uses Faraday for other clients can subscribe to Atlas traffic alone.
+    INSTRUMENTATION_EVENT = "request.atlas_rb"
     # Wire contract Atlas enforces for relay-signing assertions (see Atlas
     # ApplicationController#verify_cerberus_assertion). iss/aud are fixed; the
     # short TTL bounds replay (Atlas allows 30s leeway on exp).
@@ -83,6 +102,7 @@ module AtlasRb
         params: params,
         headers: headers
       ) do |f|
+        instrument(f)
         f.use AtlasRb::Middleware::RaiseOnStaleResource
         f.use AtlasRb::Middleware::RaiseOnResourceError
         f.response :follow_redirects
@@ -123,6 +143,7 @@ module AtlasRb
         url: ENV.fetch("ATLAS_URL", nil),
         headers: headers
       ) do |f|
+        instrument(f)
         f.use AtlasRb::Middleware::RaiseOnStaleResource
         # Translate Atlas's verify-on-ingest 422 (fixity_mismatch /
         # unsupported_digest_algorithm) into a typed FixityMismatchError —
@@ -190,12 +211,27 @@ module AtlasRb
         params: params,
         headers: headers
       ) do |f|
+        instrument(f)
         f.response :follow_redirects
         f.adapter Faraday.default_adapter
       end
     end
 
     private
+
+    # Register Faraday's instrumentation middleware as the OUTERMOST handler so
+    # each logical call emits exactly one {INSTRUMENTATION_EVENT} — a redirect
+    # hop (e.g. the `/resources/:noid` resolver) is bracketed with the request
+    # it redirects to, not counted twice. Guarded on
+    # `defined?(ActiveSupport::Notifications)` because Faraday defaults its
+    # instrumenter to that constant and would `NameError` at build time on the
+    # headless path where ActiveSupport isn't loaded; there, the emit is simply
+    # never wired and the transport is unaffected.
+    def instrument(builder)
+      return unless defined?(ActiveSupport::Notifications)
+
+      builder.request :instrumentation, name: INSTRUMENTATION_EVENT
+    end
 
     # Build the auth + identity headers shared by {#connection} and {#multipart}.
     # Precedence: ATLAS_JWT (BYO-JWT) > relay-signing. The acting nuid /
