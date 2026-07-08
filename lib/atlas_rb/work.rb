@@ -124,7 +124,7 @@ module AtlasRb
         connection(params, nuid,
                    on_behalf_of: on_behalf_of, idempotency_key: idempotency_key).post(ROUTE)&.body
       ))["work"]
-      return result unless xml_path.present?
+      return result if xml_path.to_s.empty?
 
       update(result["id"], xml_path, nuid: nuid, on_behalf_of: on_behalf_of)
       find(result["id"], nuid: nuid, on_behalf_of: on_behalf_of)
@@ -559,7 +559,7 @@ module AtlasRb
     def self.mods(id, kind = nil, nuid: nil, on_behalf_of: nil)
       # json default, html, xml
       connection({}, nuid, on_behalf_of: on_behalf_of).get(
-        ROUTE + id + '/mods' + (kind.present? ? ".#{kind}" : '')
+        ROUTE + id + '/mods' + (kind.to_s.empty? ? '' : ".#{kind}")
         )&.body
     end
 

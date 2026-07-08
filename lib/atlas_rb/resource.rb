@@ -244,7 +244,7 @@ module AtlasRb
     #   end
     def self.mods(id, kind = nil, nuid: nil, on_behalf_of: nil)
       connection({}, nuid, on_behalf_of: on_behalf_of).get(
-        '/resources/' + id + '/mods' + (kind.present? ? ".#{kind}" : '')
+        '/resources/' + id + '/mods' + (kind.to_s.empty? ? '' : ".#{kind}")
       )&.body
     end
 
@@ -320,7 +320,7 @@ module AtlasRb
     def self.mods_version(id, version_id, kind: nil, nuid: nil, on_behalf_of: nil)
       connection({}, nuid, on_behalf_of: on_behalf_of).get(
         '/resources/' + id + '/mods/versions/' + version_id +
-          (kind.present? ? ".#{kind}" : '')
+          (kind.to_s.empty? ? '' : ".#{kind}")
       )&.body
     end
 
