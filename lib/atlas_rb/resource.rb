@@ -88,6 +88,52 @@ module AtlasRb
       ).map { |node| AtlasRb::Mash.new(node) }
     end
 
+    # Every Work beneath a resource, at any depth — the structural counterpart
+    # to {Compilation.contents}. Wraps `GET /resources/<id>/descendant_works`,
+    # which flattens the resource's full descendant subtree to the Works it
+    # contains, gated to what the caller may read and paginated Solr-side. Gives
+    # a Collection the flatten-to-Works capability a Set already has, so a bulk
+    # export (e.g. hyperion) pages one gated, fast call family instead of the
+    # client-side `children → find_many → recurse` walk.
+    #
+    # Returns the same digest shape as {find_many} / {Compilation.contents}
+    # (`{ "id", "noid", "klass", "title", "thumbnail" }`) under a `"works"` key,
+    # plus a `"pagination"` envelope (`total` / `page` / `per_page` / `pages`).
+    # Membership is **structural** (`a_member_of`) only; pass
+    # `include_linked: true` to also surface linked members
+    # (`a_linked_member_of`). Restricted Works never appear for a caller who may
+    # not read them; tombstoned Works are dropped.
+    #
+    # @param id [String] an Atlas resource ID (subtree root; any type).
+    # @param page [Integer, nil] 1-based page (default 1 server-side).
+    # @param per_page [Integer, nil] page size (server default 25, capped 100).
+    # @param include_linked [Boolean, nil] also include linked members when
+    #   truthy; structural-only by default.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when omitted.
+    # @return [AtlasRb::Mash, nil] the parsed envelope, with a `"works"` digest
+    #   array and a `"pagination"` block; `nil` when the id resolves to nothing
+    #   (`404`).
+    #
+    # @example Page a Collection's whole subtree of Works
+    #   result = AtlasRb::Resource.descendant_works("col-456", per_page: 100)
+    #   result["works"].map { |w| w["noid"] }
+    #   result.dig("pagination", "pages")
+    def self.descendant_works(id, page: nil, per_page: nil, include_linked: nil, nuid: nil, on_behalf_of: nil)
+      params = {}
+      params[:page]           = page           if page
+      params[:per_page]       = per_page       if per_page
+      params[:include_linked] = include_linked unless include_linked.nil?
+      resp = connection(params, nuid, on_behalf_of: on_behalf_of)
+             .get('/resources/' + id + '/descendant_works')
+      return nil if resp.status == 404
+
+      AtlasRb::Mash.new(JSON.parse(resp.body))
+    end
+
     # Validate a MODS XML document against Atlas's schema *without* persisting it.
     #
     # Useful for surfacing validation errors in UIs before the user commits.
