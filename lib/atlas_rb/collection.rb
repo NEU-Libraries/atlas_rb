@@ -1,11 +1,14 @@
 # frozen_string_literal: true
 
 module AtlasRb
-  # A grouping of {Work}s within a {Community}.
+  # A grouping of {Work}s and nested {Collection}s, parented by a {Community}
+  # or another Collection.
   #
-  # Collections are the leaf containers in the organizational tree — they hold
-  # Works directly. Every Collection has
-  # exactly one parent Community.
+  # Collections nest, exactly as they did in DRS v1: a Collection holds Works
+  # and/or child Collections, and its own parent may be a Community or a
+  # Collection (Community → Community|Collection, Collection → Collection|Work,
+  # Work → leaf). A consumer that flattens a subtree must recurse into
+  # descendant Collections rather than stopping at direct children.
   #
   # See also: {Community}, {Work}.
   class Collection < Resource
@@ -35,13 +38,13 @@ module AtlasRb
       body && AtlasRb::Mash.new(body)["collection"]
     end
 
-    # Create a new Collection under an existing Community.
+    # Create a new Collection under an existing Community or parent Collection.
     #
-    # **Note**: unlike {Community.create}, the `id` parameter here is the
-    # parent **Community** ID (not a parent Collection ID — Collections do
-    # not nest).
+    # The `id` parameter is the parent's ID — a **Community or a Collection**,
+    # since Collections nest (a Collection may hold child Collections as well as
+    # Works).
     #
-    # @param id [String] the parent Community ID.
+    # @param id [String] the parent Community or Collection ID.
     # @param xml_path [String, nil] optional path to a MODS XML file used to
     #   seed metadata. When given, the Collection is created and immediately
     #   patched with the metadata in the file.
@@ -90,10 +93,10 @@ module AtlasRb
       ))["collection"]
     end
 
-    # Move a Collection to a different parent Community.
+    # Move a Collection to a different parent (Community or Collection).
     #
     # Wraps `PATCH /collections/<id>/parent` with a `parent_id` of the new
-    # Community. Atlas re-parents the Collection and synchronously cascades
+    # parent. Atlas re-parents the Collection and synchronously cascades
     # the ancestry index over its Works; the structural rules (type, cycle,
     # tombstone guards) are enforced server-side and surface as a `422`.
     #
@@ -101,7 +104,7 @@ module AtlasRb
     # the only difference is the verb and that the Collection already exists.
     #
     # @param id [String] the Collection ID to move.
-    # @param new_parent_id [String] the destination Community ID.
+    # @param new_parent_id [String] the destination Community or Collection ID.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
