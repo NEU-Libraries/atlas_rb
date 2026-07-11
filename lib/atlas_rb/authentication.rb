@@ -17,7 +17,14 @@ module AtlasRb
 
     # Look up the Atlas user record for an NUID.
     #
+    # A NUID can hold several accounts (a person's staff/student logins). Pass
+    # `email:` to act as — and read back — a specific one; it rides as a signed
+    # `acct` claim so `GET /user` resolves that account. Omit it and Atlas
+    # returns the person's preferred account.
+    #
     # @param nuid [String] the user's Northeastern University ID.
+    # @param email [String, nil] optional account email to act as (the `acct`
+    #   selector); nil resolves the preferred account.
     # @return [Hash] the user record returned by `GET /user`, including at
     #   minimum `"id"`, `"name"`, and `"groups"`.
     # @raise [JSON::ParserError] if the response body is not valid JSON
@@ -26,10 +33,8 @@ module AtlasRb
     # @example
     #   AtlasRb::Authentication.login("001234567")
     #   # => { "id" => 42, "name" => "Jane Doe", "groups" => [...] }
-    def self.login(nuid)
-      # JSON.parse(connection({ nuid: nuid }).post('/token')&.body)["token"]
-      # need hash - id, name, token => ...
-      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get('/user')&.body))
+    def self.login(nuid, email: nil)
+      AtlasRb::Mash.new(JSON.parse(connection({}, nuid, account: email).get('/user')&.body))
     end
 
     # Fetch only the group memberships for an NUID.

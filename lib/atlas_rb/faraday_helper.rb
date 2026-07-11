@@ -76,6 +76,10 @@ module AtlasRb
     #   claim (acting-as / view-as). When `nil`, falls through to
     #   `AtlasRb.config.default_on_behalf_of&.call`; if that is also nil, no
     #   `obo` claim is added.
+    # @param account [String, nil] optional account email carried as a signed
+    #   `acct` claim, naming which of the NUID's accounts is acting. When `nil`,
+    #   falls through to `AtlasRb.config.default_account&.call`; if that is also
+    #   nil, no `acct` claim is added and Atlas resolves the preferred account.
     # @param idempotency_key [String, nil] optional UUID to send in the
     #   `Idempotency-Key` header. Used by retry-safe create flows (currently
     #   `POST /works`, `POST /file_sets`, `POST /files`) to deduplicate replays
@@ -92,8 +96,8 @@ module AtlasRb
     #
     # @example Fetching a community
     #   AtlasRb::Community.connection({}).get('/communities/abc123')
-    def connection(params, nuid=nil, on_behalf_of: nil, idempotency_key: nil, auth: :required)
-      headers = auth_headers(nuid, on_behalf_of, optional: auth == :optional)
+    def connection(params, nuid=nil, on_behalf_of: nil, account: nil, idempotency_key: nil, auth: :required)
+      headers = auth_headers(nuid, on_behalf_of, account: account, optional: auth == :optional)
                 .merge("Content-Type" => "application/json")
       headers["Idempotency-Key"] = idempotency_key if idempotency_key
 
@@ -135,8 +139,8 @@ module AtlasRb
     #                                               "scan.pdf")
     #   }
     #   AtlasRb::Blob.multipart.post('/files/', payload)
-    def multipart(nuid=nil, on_behalf_of: nil, idempotency_key: nil)
-      headers = auth_headers(nuid, on_behalf_of)
+    def multipart(nuid=nil, on_behalf_of: nil, account: nil, idempotency_key: nil)
+      headers = auth_headers(nuid, on_behalf_of, account: account)
       headers["Idempotency-Key"] = idempotency_key if idempotency_key
 
       Faraday.new(
@@ -243,14 +247,15 @@ module AtlasRb
     # is only for endpoints Atlas serves with `require_auth` skipped (`GET
     # /reset`); every normal endpoint leaves `optional` false so a
     # misconfiguration fails loudly rather than silently going unauthenticated.
-    def auth_headers(nuid, on_behalf_of, optional: false)
+    def auth_headers(nuid, on_behalf_of, account: nil, optional: false)
       jwt = ENV.fetch("ATLAS_JWT", nil)
       return { "Authorization" => "Bearer #{jwt}" } if jwt
 
       nuid         ||= AtlasRb.config.default_nuid&.call
       on_behalf_of ||= AtlasRb.config.default_on_behalf_of&.call
+      account      ||= AtlasRb.config.default_account&.call
 
-      headers = signed_relay_headers(nuid, on_behalf_of)
+      headers = signed_relay_headers(nuid, on_behalf_of, account)
       return headers if headers
       return {} if optional
 
@@ -262,14 +267,16 @@ module AtlasRb
     # A signed-assertion Authorization header (sub = acting nuid), or nil when
     # signing isn't configured or there is no acting nuid to put in `sub`.
     # Acting-as is carried IN the assertion as a signed `obo` claim (Atlas
-    # honours it on the assertion path; a header obo is ignored there).
-    def signed_relay_headers(nuid, on_behalf_of)
+    # honours it on the assertion path; a header obo is ignored there). When a
+    # NUID holds several accounts, `account` (email) rides as a signed `acct`
+    # claim naming which one is acting; absent, Atlas picks the preferred.
+    def signed_relay_headers(nuid, on_behalf_of, account = nil)
       return nil unless nuid
 
       key = assertion_signing_key
       return nil unless key
 
-      { "Authorization" => "Bearer #{signed_assertion(nuid.to_s, key, on_behalf_of)}" }
+      { "Authorization" => "Bearer #{signed_assertion(nuid.to_s, key, on_behalf_of, account)}" }
     end
 
     # Mint a Cerberus relay assertion for `nuid`, signed ES256 with `key`. The
@@ -278,11 +285,12 @@ module AtlasRb
     # for an Atlas-side one-time cache. When `on_behalf_of` is given, it rides as
     # a SIGNED `obo` claim — acting-as that can't be forged onto a stolen
     # assertion (Atlas admin-gates the operator and ignores any header obo here).
-    def signed_assertion(nuid, key, on_behalf_of = nil)
+    def signed_assertion(nuid, key, on_behalf_of = nil, account = nil)
       now = Time.now.to_i
       payload = { "iss" => ASSERTION_ISSUER, "aud" => ASSERTION_AUDIENCE, "sub" => nuid,
                   "iat" => now, "exp" => now + ASSERTION_TTL, "jti" => SecureRandom.uuid,
-                  "obo" => on_behalf_of&.to_s }.compact # obo only when acting-as
+                  "obo"  => on_behalf_of&.to_s, # obo only when acting-as
+                  "acct" => account&.to_s }.compact # acct only when a specific account is named
       JWT.encode(payload, key, "ES256", { kid: assertion_signing_kid })
     end
 

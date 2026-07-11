@@ -3,8 +3,8 @@
 module AtlasRb
   # Holds gem-wide configuration registered via {AtlasRb.configure}.
   #
-  # The configuration model is deliberately tiny: two slots, both of which
-  # accept callables. The gem stays consumer-agnostic — it knows nothing
+  # The configuration model is deliberately tiny: a handful of slots, all of
+  # which accept callables. The gem stays consumer-agnostic — it knows nothing
   # about Rails, Devise, or any host application's request lifecycle — and
   # instead lets the consumer hand it lambdas that resolve the per-request
   # ambient context when a request is about to go out.
@@ -44,6 +44,15 @@ module AtlasRb
     # @return [Proc, nil] callable returning the on-behalf-of NUID, or nil
     #   to send no `On-Behalf-Of:` header.
     attr_accessor :default_on_behalf_of
+
+    # @return [Proc, nil] callable returning the ambient account email when a
+    #   call is made without an explicit `account:` kwarg. A person's NUID can
+    #   hold several accounts (staff/student logins); this names which one is
+    #   acting, signed into the assertion as an `acct` claim (companion to
+    #   {#default_nuid}). Typically `-> { Current.account_email }` in a Rails
+    #   host. `nil` (the default) signs no `acct` — Atlas then resolves the
+    #   person's preferred account.
+    attr_accessor :default_account
 
     # Relay signing. When set, the regular relay path *signs* a short-lived
     # assertion (ES256, `sub` = acting nuid) — identity is proven, not asserted.

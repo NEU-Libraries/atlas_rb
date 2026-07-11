@@ -125,6 +125,25 @@ RSpec.describe AtlasRb::FaradayHelper do
       expect(payload).not_to have_key("obo")
     end
 
+    it "carries the acting account as a signed acct claim when given" do
+      headers = host.connection({}, "001234567", account: "j.doe@husky.neu.edu").headers
+      payload, = decode(bearer(headers))
+      expect(payload).to include("sub" => "001234567", "acct" => "j.doe@husky.neu.edu")
+    end
+
+    it "omits the acct claim entirely when no account is named" do
+      payload, = decode(bearer(host.connection({}, "001234567").headers))
+      expect(payload).not_to have_key("acct")
+    end
+
+    it "falls through to config.default_account when account: is omitted" do
+      AtlasRb.config.default_account = -> { "ambient@husky.neu.edu" }
+      payload, = decode(bearer(host.connection({}, "001234567").headers))
+      expect(payload["acct"]).to eq("ambient@husky.neu.edu")
+    ensure
+      AtlasRb.config.default_account = nil
+    end
+
     it "raises ConfigurationError when there is no acting nuid to sign for" do
       expect { host.connection({}) }.to raise_error(AtlasRb::ConfigurationError)
     end
