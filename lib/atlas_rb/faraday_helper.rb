@@ -196,11 +196,13 @@ module AtlasRb
     # Used exclusively by classes under {AtlasRb::System}.
     #
     # @param params [Hash] query-string / body params.
+    # @param on_behalf_of [String, nil] optional NUID sent as a plain (not
+    #   signed) `On-Behalf-Of` header — this path is already backend-only.
     # @return [Faraday::Connection] a system-authenticated connection.
     # @raise [RuntimeError] if the credential is not configured.
     # @raise [NameError] if `Rails` is not loaded (the gem assumes a
     #   Rails host for system-path calls).
-    def system_connection(params = {})
+    def system_connection(params = {}, on_behalf_of: nil)
       token = Rails.application.credentials.atlas_system_token ||
               raise("atlas_rb: Rails.application.credentials.atlas_system_token not configured")
 
@@ -209,6 +211,7 @@ module AtlasRb
         "Authorization" => "Bearer #{token}",
         "User"          => "NUID #{AtlasRb::System::NUID}"
       }
+      headers["On-Behalf-Of"] = "NUID #{on_behalf_of}" if on_behalf_of
 
       Faraday.new(
         url: ENV.fetch("ATLAS_URL", nil),
@@ -216,6 +219,10 @@ module AtlasRb
         headers: headers
       ) do |f|
         instrument(f)
+        # Narrowly path-scoped (see each class) — a no-op for System::User /
+        # System::Token, and gives System::Work the same typed errors as #connection.
+        f.use AtlasRb::Middleware::RaiseOnStaleResource
+        f.use AtlasRb::Middleware::RaiseOnResourceError
         f.response :follow_redirects
         f.adapter Faraday.default_adapter
       end
