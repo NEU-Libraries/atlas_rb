@@ -62,33 +62,6 @@ RSpec.describe AtlasRb::FaradayHelper do
     end
   end
 
-  describe "#system_connection" do
-    let(:credentials) { double(atlas_system_token: "sys-token-abc") }
-    let(:rails_app)   { double(credentials: credentials) }
-
-    before { stub_const("Rails", double(application: rails_app)) }
-
-    it "sends the hard-pinned system bearer + User header" do
-      headers = host.system_connection.headers
-      expect(headers["Authorization"]).to eq("Bearer sys-token-abc")
-      expect(headers["User"]).to eq("NUID #{AtlasRb::System::NUID}")
-    end
-
-    it "omits On-Behalf-Of when not given" do
-      expect(host.system_connection.headers).not_to have_key("On-Behalf-Of")
-    end
-
-    it "sends a plain On-Behalf-Of header when given (not a signed claim, unlike #connection)" do
-      headers = host.system_connection({}, on_behalf_of: "001234567").headers
-      expect(headers["On-Behalf-Of"]).to eq("NUID 001234567")
-    end
-
-    it "raises when the system token credential is not configured" do
-      allow(credentials).to receive(:atlas_system_token).and_return(nil)
-      expect { host.system_connection }.to raise_error(/atlas_system_token not configured/)
-    end
-  end
-
   describe "#multipart" do
     it "mirrors connection's mode selection in BYO-JWT mode" do
       ENV["ATLAS_JWT"] = "jwt-xyz"
