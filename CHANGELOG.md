@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.9.2
+
+### Added — `read_only:` on `System::Token.mint`
+
+`AtlasRb::System::Token.mint(nuid:, read_only: true)` mints a token Atlas
+structurally restricts to read-shaped actions, independent of what `nuid`
+could otherwise do — the shape to hand to a non-human caller (e.g. an Atlas
+MCP client) that must never be able to mutate the repository. Omitted, mint
+is unchanged (full-privilege, as before).
+
 ## 1.8.8
 
 ### Added — type-agnostic current MODS (`Resource.mods`)
