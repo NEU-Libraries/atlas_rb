@@ -19,6 +19,29 @@ person's NUID would hand them edit over that whole subtree.
 Omitted, the depositor still falls through to the acting user, so existing
 callers are unaffected.
 
+### Added — typed errors for Atlas's container-create `403` and ACL-write `422`
+
+Atlas gained two refusals that the bindings previously swallowed, because
+`RaiseOnResourceError` was scoped to the re-parent / linked-member /
+Compilation / derivative-permissions / upload paths:
+
+- **A refused create.** `POST /{works,collections,communities}` now `403`s when
+  the caller holds no edit rights on the destination container. The binding's
+  `["collection"]` unwrap returned `nil`, so the caller's next `.id` raised
+  `NoMethodError` — an unhandled 500 instead of an authorization failure. Now
+  {AtlasRb::ForbiddenError}, carrying `action: "create_child"` and the parent
+  container's class as `subject`.
+- **A refused ACL write.** `PATCH /{type}/:id` with `metadata[permissions]`
+  now `422`s with `visibility_exceeds_parent` when the read audience would
+  exceed the structural container. The parsed envelope looked like a success
+  payload, so a user's visibility edit was discarded silently. Now
+  {AtlasRb::PermissionsError}, keyed on the `error` code rather than the path —
+  the same endpoint's other `422`s (tombstone's `has_live_children`) still pass
+  through untouched, which a path rule could not distinguish.
+
+The create branch matches the three paths exactly and only on `POST`, so member
+actions under the same prefix and the index `GET` are unaffected.
+
 ## 1.9.2
 
 ### Added — `read_only:` on `System::Token.mint`

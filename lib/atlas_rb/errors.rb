@@ -201,15 +201,58 @@ module AtlasRb
     end
   end
 
-  # Raised when Atlas refuses a re-parent, linked-member, or Compilation
-  # request with an HTTP `403`, whose envelope is
+  # Raised when Atlas refuses an ACL write on a resource
+  # (`PATCH /{works,collections,communities}/:id` with `metadata[permissions]`)
+  # because it breaks a rights invariant. Today the one code is
+  # `visibility_exceeds_parent`: a resource may be no more visible than its
+  # structural container, so opening a Work to `public` inside a restricted
+  # Collection is refused (the fix is to widen the container).
+  #
+  # This is NOT an authorization failure — the caller may well hold full edit
+  # rights on the resource, and a depositor choosing "Public" on their own item
+  # under a private collection trips it in ordinary use. Without the typed
+  # error the binding's `["collection"]` / `["work"]` unwrap returns an envelope
+  # the caller reads as success, so the user's visibility edit is silently
+  # discarded.
+  #
+  #   rescue AtlasRb::PermissionsError => e
+  #     flash.now[:alert] = t("permissions.errors.#{e.code}", default: e.message)
+  #
+  # @note Keyed on the envelope's `error` code, not the request path, so other
+  #   `422`s on the same endpoint (e.g. `tombstone`'s `has_live_children`) pass
+  #   through untouched.
+  class PermissionsError < Error
+    # @return [String, nil] the machine-readable error code from the envelope,
+    #   suitable for keying an i18n map.
+    attr_reader :code
+
+    # @return [String, nil] the rejected resource's ID, from the envelope.
+    attr_reader :resource_id
+
+    # @param message [String] human-readable rejection description.
+    # @param code [String, nil] the envelope's `error` discriminator.
+    # @param resource_id [String, nil] the rejected resource's ID.
+    def initialize(message, code: nil, resource_id: nil)
+      super(message)
+      @code = code
+      @resource_id = resource_id
+    end
+  end
+
+  # Raised when Atlas refuses a re-parent, linked-member, Compilation, or
+  # container-create request with an HTTP `403`, whose envelope is
   # `{ "error", "action", "subject" }`. Lets callers distinguish "you may
   # not do this" from a structural rejection ({ReparentError} /
   # {LinkedMemberError} / {CompilationError}) or a not-found.
   #
-  # @note Scoped to the re-parent / linked-member write paths and the
-  #   Compilation surface — `403`s on other endpoints still surface as raw
-  #   responses for the caller's own rescue layer, unchanged.
+  # On a create the `action` is `create_child` and the `subject` is the parent
+  # container's class: the caller holds no edit rights on the container the new
+  # child would land in.
+  #
+  # @note Scoped to the re-parent / linked-member write paths, the Compilation
+  #   surface, and the container-create endpoints — `403`s on other endpoints
+  #   still surface as raw responses for the caller's own rescue layer,
+  #   unchanged.
   class ForbiddenError < Error
     # @return [String, nil] the envelope's `error` value.
     attr_reader :code
