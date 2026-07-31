@@ -222,6 +222,11 @@ AtlasRb::FileSet.create("w-789", "primary") # file_set under work w-789, classif
 AtlasRb::Blob.create("w-789", path, name)  # blob under work w-789 with original filename preserved
 ```
 
+`Community.create`, `Collection.create`, and `Work.create` each accept an
+optional `depositor:` kwarg — the NUID to stamp as the resource's intellectual
+owner, independent of who authorizes the call. Omitted, Atlas falls through to
+the acting user.
+
 `Work.create`, `FileSet.create`, and `Blob.create` each accept an optional
 `idempotency_key:` kwarg for retry-safe bulk-deposit jobs. The caller
 generates the UUID; the Atlas server enforces uniqueness scoped to the

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.9.3
+
+### Added — `depositor:` on `Collection.create` and `Community.create`
+
+`AtlasRb::Collection.create(parent_id, depositor: "000000099")` (and the same
+on `Community.create`) stamps a container's intellectual owner, matching what
+`Work.create` has always supported. Atlas already read the param; only the
+bindings couldn't pass it.
+
+The case it unblocks is seeding an institutional tree: the caller acts as an
+admin (the only identity whose wildcard carries a whole seed sequence) while
+attributing the containers to the anonymous NUID, since nobody personally owns
+them and access is via Grouper groups. That matters now that a depositor
+carries edit rights on their own resource — a container stamped with a real
+person's NUID would hand them edit over that whole subtree.
+
+Omitted, the depositor still falls through to the acting user, so existing
+callers are unaffected.
+
 ## 1.9.2
 
 ### Added — `read_only:` on `System::Token.mint`

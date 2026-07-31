@@ -52,6 +52,13 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
+    # @param depositor [String, nil] NUID to stamp as the Community's
+    #   intellectual owner. Omit it and Atlas falls through to the acting user.
+    #   Supply it to attribute a container to someone other than whoever is
+    #   authorizing the call — e.g. seeding an institutional tree as an admin
+    #   while attributing it to the anonymous NUID, since nobody personally owns
+    #   those containers and access to them is via Grouper groups. The depositor
+    #   is immutable post-create; there is no setter on the update surface.
     # @return [Hash] the created Community payload (post-update if `xml_path`
     #   was supplied).
     #
@@ -60,9 +67,14 @@ module AtlasRb
     #
     # @example Sub-community seeded from MODS
     #   AtlasRb::Community.create("c-parent", "/tmp/dept-mods.xml")
-    def self.create(id = nil, xml_path = nil, nuid: nil, on_behalf_of: nil)
+    #
+    # @example An institutional container owned by nobody
+    #   AtlasRb::Community.create("c-parent", depositor: "000000099")
+    def self.create(id = nil, xml_path = nil, nuid: nil, on_behalf_of: nil, depositor: nil)
+      params = { parent_id: id }
+      params[:depositor] = depositor if depositor
       result = AtlasRb::Mash.new(JSON.parse(
-        connection({ parent_id: id }, nuid, on_behalf_of: on_behalf_of).post(ROUTE)&.body
+        connection(params, nuid, on_behalf_of: on_behalf_of).post(ROUTE)&.body
       ))["community"]
       return result if xml_path.to_s.empty?
 
