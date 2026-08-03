@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.9.4
+
+### Fixed — write bindings parsed the response body without checking the status
+
+A write aimed at a resource that is not there raised
+`JSON::ParserError: unexpected end of input at line 1 column 1`. Atlas is
+correct here: it answers `head :not_found`, a `404` with an empty body. The
+bindings then handed that empty body to `JSON.parse`.
+
+The message named neither the verb nor the resource, so an operator whose XML
+manifest carried a PID from another environment got five identical parser
+errors and nothing to act on. `Resource.fetch_resource` already guarded the
+**read** path against exactly this; the write half never got the same
+treatment.
+
+Every `create` / `update` / `metadata` / `parent` / `rollback` and sibling
+across `Work`, `Collection`, `Community`, `Blob`, `FileSet`, `Compilation` and
+`Person` now goes through a `write_resource` companion:
+
+- `404` → {AtlasRb::NotFoundError}, naming the verb and path.
+- `410` → the parsed body, as on the read path: an Idempotency-Key replay whose
+  resource has since been tombstoned answers `410 Gone` *with* the tombstone.
+- any other non-2xx → {AtlasRb::ResourceError}, carrying Atlas's status + body.
+- `2xx` → the parsed body, exactly as before.
+
+`NotFoundError` subclasses `ResourceError`, so a caller that only wants "the
+write failed" rescues the parent.
+
+Note the deliberate asymmetry with the read path, which keeps returning `nil`
+on a `404`: that answers a read, but not a write — the caller asked for a
+change and did not get one.
+
+Blast radius is which exception surfaces, not whether one does. The typed
+`403` / `422` translations raise inside the Faraday stack, so they still fire
+first; a `422` the middleware passes through on purpose (`tombstone`'s
+`has_live_children`) is unaffected, because `tombstone`, `destroy` and
+`complete` return the raw response and never parsed.
+
 ## 1.9.3
 
 ### Added — `depositor:` on `Collection.create` and `Community.create`

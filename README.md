@@ -438,6 +438,43 @@ tombstoned resources come back flagged (`"tombstoned" => true`), so index
 by `"noid"` rather than assuming positional correspondence. NOIDs only —
 raw Valkyrie ids are not a supported input.
 
+### Missing resources: `nil` on a read, a raise on a write
+
+The two halves of the API answer an absent resource differently, on purpose.
+
+A **read** returns `nil`. "There is nothing there" is a legitimate answer to a
+question, and callers already nil-check a `find`:
+
+```ruby
+AtlasRb::Work.find("doesnotexist")   # => nil
+```
+
+A **write** raises `AtlasRb::NotFoundError`. The caller asked for a change and
+did not get one, so `nil` would invite the silent failure the read guard was
+written to prevent:
+
+```ruby
+begin
+  AtlasRb::Work.update("doesnotexist", "/tmp/mods.xml")
+rescue AtlasRb::NotFoundError => e
+  e.status    # => 404
+  e.message   # => "PATCH /works/doesnotexist → 404 (no such resource)"
+end
+```
+
+This covers every `create` / `update` / `metadata` / `parent` / `rollback` and
+their siblings on `Work`, `Collection`, `Community`, `Blob`, `FileSet`,
+`Compilation` and `Person`. Any other non-2xx a write gets raises
+`AtlasRb::ResourceError`, which `NotFoundError` subclasses — so a caller that
+only wants "the write failed" rescues the parent.
+
+Two neighbours are deliberately untouched. A `410 Gone` is returned, not
+raised, the same way a read returns it: an `Idempotency-Key` replay whose
+resource has since been tombstoned answers `410` *with* the tombstone, and the
+caller reads `tombstoned`. And the typed `403` / `422` translations above still
+fire first, while `tombstone` / `destroy` / `complete` keep returning the raw
+Faraday response for the caller to read.
+
 ## End-to-end example
 
 JSON responses come back as `AtlasRb::Mash` (a `Hashie::Mash` subclass), so
