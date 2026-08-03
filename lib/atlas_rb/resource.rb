@@ -368,5 +368,70 @@ module AtlasRb
       JSON.parse(resp.body)
     end
     private_class_method :fetch_resource
+
+    # Shared write path behind the resource `POST` / `PATCH` / `DELETE`
+    # bindings: check the status, then parse. The companion to
+    # {fetch_resource}, and it exists for the same reason — Atlas answers a
+    # write aimed at a resource that isn't there with `head :not_found`, whose
+    # body is empty, so a bare `JSON.parse(resp.body)` raised
+    # `JSON::ParserError: unexpected end of input`. An operator loading a
+    # manifest of PIDs from another environment saw that, and nothing naming
+    # the missing object.
+    #
+    # Mapping:
+    #
+    # - `404`             → {AtlasRb::NotFoundError}, naming the verb and path.
+    # - `410`             → the parsed JSON body, as on the read path. An
+    #   Idempotency-Key replay whose resource has since been tombstoned answers
+    #   `410 Gone` WITH the tombstone, so it is a returnable body carrying
+    #   `tombstoned` / `tombstoned_at` / `tombstoned_by`, not an error envelope.
+    # - any other non-2xx → {AtlasRb::ResourceError} carrying Atlas's status +
+    #   body, so the failure is attributable at the boundary.
+    # - `2xx`             → the parsed JSON body, for the caller to unwrap.
+    #
+    # Note the deliberate asymmetry with {fetch_resource}, which returns `nil`
+    # on a `404`: "there is nothing there" is a legitimate answer to a read,
+    # but not to a write. The caller asked for a change and did not get one, so
+    # `nil` would invite exactly the silent failure the read guard was written
+    # to prevent.
+    #
+    # The typed `403` / `422` translations ({AtlasRb::ForbiddenError},
+    # {AtlasRb::ReparentError}, and their siblings) fire in
+    # {Middleware::RaiseOnResourceError} while the request is still in the
+    # Faraday stack, so they raise before a binding reaches this — and a `422`
+    # the middleware deliberately passes through (`tombstone`'s
+    # `has_live_children`) reaches its caller as before, because the tombstone
+    # bindings return the raw response and never parse.
+    #
+    # @param resp [Faraday::Response] the completed write response.
+    # @return [Hash, Array] the parsed JSON body (incl. a `410` tombstone).
+    # @raise [AtlasRb::NotFoundError] on a `404`.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx except `410`.
+    # @api private
+    def self.write_resource(resp)
+      if resp.status == 404
+        raise AtlasRb::NotFoundError.new("#{write_target(resp)} → 404 (no such resource)", response: resp)
+      end
+
+      unless resp.success? || resp.status == 410
+        raise AtlasRb::ResourceError.new("#{write_target(resp)} → #{resp.status}: #{resp.body}", response: resp)
+      end
+
+      JSON.parse(resp.body)
+    end
+    private_class_method :write_resource
+
+    # The verb and path of a completed request — `"PATCH /works/abc123"` — so a
+    # {write_resource} failure names what did not happen. Read off the response
+    # rather than passed in, keeping every write binding a plain wrap.
+    #
+    # @param resp [Faraday::Response] the completed response.
+    # @return [String] the verb and path.
+    # @api private
+    def self.write_target(resp)
+      env = resp.env
+      "#{env&.method.to_s.upcase} #{env&.url&.path}"
+    end
+    private_class_method :write_target
   end
 end

@@ -89,10 +89,14 @@ module AtlasRb
     # @param on_behalf_of [String, nil] acting-as target (the acting principal
     #   itself comes from the ambient AtlasRb.config.default_nuid).
     # @return [AtlasRb::Mash] the unwrapped `"person"` object.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     def self.create(nuid:, display_name:, bio: nil, orcid: nil, title: nil, on_behalf_of: nil)
       body = { nuid: nuid, display_name: display_name, bio: bio, orcid: orcid, title: title }.compact
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nil, on_behalf_of: on_behalf_of).post(ROUTE, JSON.dump(body))&.body
+      AtlasRb::Mash.new(write_resource(
+        connection({}, nil, on_behalf_of: on_behalf_of).post(ROUTE, JSON.dump(body))
       ))["person"]
     end
 
@@ -107,10 +111,14 @@ module AtlasRb
     # @param nuid [String, nil] acting principal.
     # @param on_behalf_of [String, nil] acting-as target.
     # @return [AtlasRb::Mash] the unwrapped, updated `"person"` object.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     def self.update(id, display_name: nil, bio: nil, orcid: nil, title: nil, nuid: nil, on_behalf_of: nil)
       body = { display_name: display_name, bio: bio, orcid: orcid, title: title }.compact
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, JSON.dump(body))&.body
+      AtlasRb::Mash.new(write_resource(
+        connection({}, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, JSON.dump(body))
       ))["person"]
     end
 
@@ -122,10 +130,14 @@ module AtlasRb
     # @param on_behalf_of [String, nil] acting-as target.
     # @return [AtlasRb::Mash] the unwrapped `"person"` object, with the updated
     #   `affiliated_community_ids`.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     def self.add_affiliation(id, community_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .post(ROUTE + id + "/affiliations", JSON.dump(community_id: community_id))&.body
+          .post(ROUTE + id + "/affiliations", JSON.dump(community_id: community_id))
       ))["person"]
     end
 
@@ -136,10 +148,14 @@ module AtlasRb
     # @param nuid [String, nil] acting principal.
     # @param on_behalf_of [String, nil] acting-as target.
     # @return [AtlasRb::Mash] the unwrapped `"person"` object.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     def self.remove_affiliation(id, community_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .delete(ROUTE + id + "/affiliations/" + community_id)&.body
+          .delete(ROUTE + id + "/affiliations/" + community_id)
       ))["person"]
     end
   end

@@ -36,7 +36,8 @@ RSpec.describe AtlasRb::FileSet do
     conn = instance_double(Faraday::Connection)
     allow(conn).to receive(:patch) do |_route, payload|
       @captured = payload
-      instance_double(Faraday::Response, body: '{"file_set":{"id":"fs-1"}}')
+      instance_double(Faraday::Response, status: 200, success?: true,
+                                         body: '{"file_set":{"id":"fs-1"}}')
     end
     expect(described_class).to receive(:multipart).with(nil, **expected_kwargs).and_return(conn)
     capture_opened_io

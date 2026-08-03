@@ -103,6 +103,10 @@ module AtlasRb
     #   setter on the update surface.
     # @return [Hash] the created Work payload (post-update if `xml_path` was
     #   supplied).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example Empty work, metadata to be added later
     #   AtlasRb::Work.create("col-456")
@@ -120,9 +124,9 @@ module AtlasRb
                     on_behalf_of: nil, depositor: nil)
       params = { collection_id: id }
       params[:depositor] = depositor if depositor
-      result = AtlasRb::Mash.new(JSON.parse(
+      result = AtlasRb::Mash.new(write_resource(
         connection(params, nuid,
-                   on_behalf_of: on_behalf_of, idempotency_key: idempotency_key).post(ROUTE)&.body
+                   on_behalf_of: on_behalf_of, idempotency_key: idempotency_key).post(ROUTE)
       ))["work"]
       return result if xml_path.to_s.empty?
 
@@ -163,13 +167,17 @@ module AtlasRb
     #   envelope's `error` code is exposed as `#code`.
     # @raise [AtlasRb::ForbiddenError] if Atlas refuses the move on
     #   authorization grounds (HTTP 403).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Work.reparent("w-789", "col-999")
     def self.reparent(id, new_collection_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({ parent_id: new_collection_id }, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/parent')&.body
+          .patch(ROUTE + id + '/parent')
       ))["work"]
     end
 
@@ -235,6 +243,10 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @return [Hash] the parsed JSON response from the patch.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Work.update("w-789", "/tmp/work-mods.xml")
@@ -242,8 +254,8 @@ module AtlasRb
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      AtlasRb::Mash.new(JSON.parse(
-        multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)&.body
+      AtlasRb::Mash.new(write_resource(
+        multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)
       ))
     end
 
@@ -264,12 +276,16 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @return [Hash] the parsed JSON response.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Work.metadata("w-789", title: "Revised Title")
     def self.metadata(id, values, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({ metadata: values }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)&.body
+      AtlasRb::Mash.new(write_resource(
+        connection({ metadata: values }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)
       ))
     end
 
@@ -293,6 +309,10 @@ module AtlasRb
     # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
     #   conflict that exhausted its internal retry budget (HTTP 409 with
     #   `error: "stale_resource"`).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Work.set_thumbnails(
@@ -303,9 +323,9 @@ module AtlasRb
     #   )
     def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil, on_behalf_of: nil)
       body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
+          .patch(ROUTE + id + '/thumbnails', JSON.dump(body))
       ))
     end
 
@@ -329,6 +349,10 @@ module AtlasRb
     # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
     #   conflict that exhausted its internal retry budget (HTTP 409 with
     #   `error: "stale_resource"`).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Work.set_image_derivatives(
@@ -339,9 +363,9 @@ module AtlasRb
     #   )
     def self.set_image_derivatives(id, small: nil, medium: nil, large: nil, nuid: nil, on_behalf_of: nil)
       body = { small: small, medium: medium, large: large }.compact
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/image_derivatives', JSON.dump(body))&.body
+          .patch(ROUTE + id + '/image_derivatives', JSON.dump(body))
       ))
     end
 
@@ -386,6 +410,10 @@ module AtlasRb
     #   (422) — `tier_exceeds_resource` / `tier_ordering_violation` /
     #   `unknown_tier` (see {#code}).
     # @raise [AtlasRb::StaleResourceError] on an optimistic-lock conflict (409).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Work.set_derivative_permissions(
@@ -395,9 +423,9 @@ module AtlasRb
     #               service: ["northeastern:drs:repository:archives"] }
     #   )
     def self.set_derivative_permissions(id, policy:, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/derivative_permissions', JSON.dump(policy))&.body
+          .patch(ROUTE + id + '/derivative_permissions', JSON.dump(policy))
       ))
     end
 
@@ -427,13 +455,17 @@ module AtlasRb
     # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
     #   conflict that exhausted its internal retry budget (HTTP 409 with
     #   `error: "stale_resource"`).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Work.set_full_text("w-789", text: extracted_pdf_text)
     def self.set_full_text(id, text:, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/full_text', JSON.dump(text: text))&.body
+          .patch(ROUTE + id + '/full_text', JSON.dump(text: text))
       ))
     end
 
@@ -620,14 +652,18 @@ module AtlasRb
     #   as `#code`.
     # @raise [AtlasRb::ForbiddenError] if Atlas refuses the link on
     #   authorization grounds (HTTP 403).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Work.add_linked_member("w-789", "col-456")
     #   # => ["col-456"]
     def self.add_linked_member(work_id, collection_id, nuid: nil, on_behalf_of: nil)
-      JSON.parse(
+      write_resource(
         connection({ collection_id: collection_id }, nuid, on_behalf_of: on_behalf_of)
-          .post(ROUTE + work_id + '/linked_members')&.body
+          .post(ROUTE + work_id + '/linked_members')
       )
     end
 
@@ -658,14 +694,18 @@ module AtlasRb
     #   as `#code`.
     # @raise [AtlasRb::ForbiddenError] if Atlas refuses the removal on
     #   authorization grounds (HTTP 403).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Work.remove_linked_member("w-789", "col-456")
     #   # => []
     def self.remove_linked_member(work_id, collection_id, nuid: nil, on_behalf_of: nil)
-      JSON.parse(
+      write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .delete(ROUTE + work_id + '/linked_members/' + collection_id)&.body
+          .delete(ROUTE + work_id + '/linked_members/' + collection_id)
       )
     end
   end

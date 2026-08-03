@@ -66,6 +66,10 @@ module AtlasRb
     #   is immutable post-create; there is no setter on the update surface.
     # @return [Hash] the created Collection payload (post-update if
     #   `xml_path` was supplied).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example A featured showcase collection
     #   AtlasRb::Collection.create("c-123", featured: true)
@@ -75,8 +79,8 @@ module AtlasRb
     def self.create(id, xml_path = nil, featured: false, nuid: nil, on_behalf_of: nil, depositor: nil)
       params = { parent_id: id, featured: featured }
       params[:depositor] = depositor if depositor
-      result = AtlasRb::Mash.new(JSON.parse(
-        connection(params, nuid, on_behalf_of: on_behalf_of).post(ROUTE)&.body
+      result = AtlasRb::Mash.new(write_resource(
+        connection(params, nuid, on_behalf_of: on_behalf_of).post(ROUTE)
       ))["collection"]
       return result if xml_path.to_s.empty?
 
@@ -96,12 +100,16 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when omitted.
     # @return [AtlasRb::Mash] the updated `"collection"` object, already unwrapped.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Collection.set_featured("col-456", true)
     def self.set_featured(id, featured, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({ featured: featured }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)&.body
+      AtlasRb::Mash.new(write_resource(
+        connection({ featured: featured }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)
       ))["collection"]
     end
 
@@ -134,13 +142,17 @@ module AtlasRb
     #   envelope's `error` code is exposed as `#code`.
     # @raise [AtlasRb::ForbiddenError] if Atlas refuses the move on
     #   authorization grounds (HTTP 403).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Collection.reparent("col-456", "c-999")
     def self.reparent(id, new_parent_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({ parent_id: new_parent_id }, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/parent')&.body
+          .patch(ROUTE + id + '/parent')
       ))["collection"]
     end
 
@@ -200,6 +212,10 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @return [Hash] the parsed JSON response from the patch.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Collection.update("col-456", "/tmp/collection-mods.xml")
@@ -207,8 +223,8 @@ module AtlasRb
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
-      AtlasRb::Mash.new(JSON.parse(
-        multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)&.body
+      AtlasRb::Mash.new(write_resource(
+        multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)
       ))
     end
 
@@ -228,12 +244,16 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @return [Hash] the parsed JSON response.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Collection.metadata("col-456", title: "Renamed Collection")
     def self.metadata(id, values, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({ metadata: values }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)&.body
+      AtlasRb::Mash.new(write_resource(
+        connection({ metadata: values }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)
       ))
     end
 
@@ -255,6 +275,10 @@ module AtlasRb
     # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
     #   conflict that exhausted its internal retry budget (HTTP 409 with
     #   `error: "stale_resource"`).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Collection.set_thumbnails(
@@ -265,9 +289,9 @@ module AtlasRb
     #   )
     def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil, on_behalf_of: nil)
       body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/thumbnails', JSON.dump(body))&.body
+          .patch(ROUTE + id + '/thumbnails', JSON.dump(body))
       ))
     end
 

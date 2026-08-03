@@ -32,7 +32,8 @@ RSpec.describe AtlasRb::Blob do
     conn = instance_double(Faraday::Connection)
     allow(conn).to receive(:post) do |_route, payload|
       @captured = payload
-      instance_double(Faraday::Response, body: '{"blob":{"id":"b-1","digest":"sha512:ff"}}')
+      instance_double(Faraday::Response, status: 200, success?: true,
+                                         body: '{"blob":{"id":"b-1","digest":"sha512:ff"}}')
     end
     expect(described_class).to receive(:multipart).with(nil, **expected_kwargs).and_return(conn)
     capture_opened_io
@@ -67,7 +68,8 @@ RSpec.describe AtlasRb::Blob do
     def stub_patch(expected_kwargs)
       conn = instance_double(Faraday::Connection)
       allow(conn).to receive(:patch).and_return(
-        instance_double(Faraday::Response, body: '{"blob":{"id":"b-1","digest":"sha512:ff"}}')
+        instance_double(Faraday::Response, status: 200, success?: true,
+                                           body: '{"blob":{"id":"b-1","digest":"sha512:ff"}}')
       )
       expect(described_class).to receive(:multipart).with(nil, **expected_kwargs).and_return(conn)
       capture_opened_io
@@ -119,7 +121,8 @@ RSpec.describe AtlasRb::Blob do
         conn = stub_connection
         expect(conn).to receive(:post)
           .with("/files/b-1/rollback", JSON.dump(version_id: "v1"))
-          .and_return(instance_double(Faraday::Response, body: '{"blob":{"id":"b-1","digest":"sha512:aa"}}'))
+          .and_return(instance_double(Faraday::Response, status: 200, success?: true,
+                                                         body: '{"blob":{"id":"b-1","digest":"sha512:aa"}}'))
 
         blob = described_class.rollback("b-1", "v1")
         expect(blob["id"]).to eq("b-1")

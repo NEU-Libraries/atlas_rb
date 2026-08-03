@@ -136,6 +136,10 @@ module AtlasRb
     #   e.g. a blank title).
     # @raise [AtlasRb::ForbiddenError] if the caller may not create Sets
     #   (guests cannot).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Compilation.create("Course readings",
@@ -144,8 +148,8 @@ module AtlasRb
     def self.create(title, description: nil, nuid: nil, on_behalf_of: nil)
       params = { title: title }
       params[:description] = description if description
-      AtlasRb::Mash.new(JSON.parse(
-        connection(params, nuid, on_behalf_of: on_behalf_of).post(ROUTE)&.body
+      AtlasRb::Mash.new(write_resource(
+        connection(params, nuid, on_behalf_of: on_behalf_of).post(ROUTE)
       ))["compilation"]
     end
 
@@ -172,6 +176,10 @@ module AtlasRb
     # @raise [AtlasRb::CompilationError] if Atlas rejects the update (422).
     # @raise [AtlasRb::ForbiddenError] if the caller lacks edit rights
     #   (owner / explicit grant / admin).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example Rename
     #   AtlasRb::Compilation.update("c-123", title: "Renamed", nuid: "000000002")
@@ -185,8 +193,8 @@ module AtlasRb
       params[:title]       = title       if title
       params[:description] = description if description
       params[:permissions] = permissions if permissions
-      AtlasRb::Mash.new(JSON.parse(
-        connection(params, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)&.body
+      AtlasRb::Mash.new(write_resource(
+        connection(params, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)
       ))["compilation"]
     end
 
@@ -231,13 +239,17 @@ module AtlasRb
     #   the full recipe, so chip counts refresh without a follow-up {.find}.
     # @raise [AtlasRb::CompilationError] if the noid is not a Collection (422).
     # @raise [AtlasRb::ForbiddenError] if the caller lacks edit rights.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Compilation.add_included_collection("c-123", "col-456", nuid: "000000002")
     def self.add_included_collection(id, collection_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({ collection_id: collection_id }, nuid, on_behalf_of: on_behalf_of)
-          .post(ROUTE + id + '/included_collections')&.body
+          .post(ROUTE + id + '/included_collections')
       ))["compilation"]
     end
 
@@ -256,13 +268,17 @@ module AtlasRb
     #   omitted.
     # @return [Hash] the updated `"compilation"` object.
     # @raise [AtlasRb::ForbiddenError] if the caller lacks edit rights.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Compilation.remove_included_collection("c-123", "col-456", nuid: "000000002")
     def self.remove_included_collection(id, collection_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .delete(ROUTE + id + '/included_collections/' + collection_id)&.body
+          .delete(ROUTE + id + '/included_collections/' + collection_id)
       ))["compilation"]
     end
 
@@ -281,13 +297,17 @@ module AtlasRb
     # @return [Hash] the updated `"compilation"` object.
     # @raise [AtlasRb::CompilationError] if the noid is not a Work (422).
     # @raise [AtlasRb::ForbiddenError] if the caller lacks edit rights.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Compilation.add_included_work("c-123", "w-789", nuid: "000000002")
     def self.add_included_work(id, work_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({ work_id: work_id }, nuid, on_behalf_of: on_behalf_of)
-          .post(ROUTE + id + '/included_works')&.body
+          .post(ROUTE + id + '/included_works')
       ))["compilation"]
     end
 
@@ -303,13 +323,17 @@ module AtlasRb
     #   omitted.
     # @return [Hash] the updated `"compilation"` object.
     # @raise [AtlasRb::ForbiddenError] if the caller lacks edit rights.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Compilation.remove_included_work("c-123", "w-789", nuid: "000000002")
     def self.remove_included_work(id, work_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .delete(ROUTE + id + '/included_works/' + work_id)&.body
+          .delete(ROUTE + id + '/included_works/' + work_id)
       ))["compilation"]
     end
 
@@ -331,13 +355,17 @@ module AtlasRb
     # @return [Hash] the updated `"compilation"` object.
     # @raise [AtlasRb::CompilationError] if the noid is not a Work (422).
     # @raise [AtlasRb::ForbiddenError] if the caller lacks edit rights.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Compilation.add_exclusion("c-123", "w-789", nuid: "000000002")
     def self.add_exclusion(id, work_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({ work_id: work_id }, nuid, on_behalf_of: on_behalf_of)
-          .post(ROUTE + id + '/exclusions')&.body
+          .post(ROUTE + id + '/exclusions')
       ))["compilation"]
     end
 
@@ -353,13 +381,17 @@ module AtlasRb
     #   omitted.
     # @return [Hash] the updated `"compilation"` object.
     # @raise [AtlasRb::ForbiddenError] if the caller lacks edit rights.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Compilation.remove_exclusion("c-123", "w-789", nuid: "000000002")
     def self.remove_exclusion(id, work_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .delete(ROUTE + id + '/exclusions/' + work_id)&.body
+          .delete(ROUTE + id + '/exclusions/' + work_id)
       ))["compilation"]
     end
 

@@ -275,12 +275,16 @@ module AtlasRb
     end
   end
 
-  # Raised by the typed single-resource readers ({Resource.find} and the
-  # `Work` / `Collection` / `Community` / `FileSet` / `Person` / `Compilation`
-  # / `Blob` / `Delegate` overrides) when Atlas answers the `GET` with a
-  # non-2xx that is **not** a `404` or a `410` — i.e. an error envelope
-  # (`{ "error" => ... }`, status 400/401/403/422) on what the caller treated
-  # as a plain read.
+  # Raised when Atlas answers a single-resource request with a non-2xx the
+  # binding cannot represent as a return value:
+  #
+  # - on a **read** ({Resource.find} and the `Work` / `Collection` /
+  #   `Community` / `FileSet` / `Person` / `Compilation` / `Blob` / `Delegate`
+  #   overrides), any non-2xx that is **not** a `404` or a `410` — i.e. an error
+  #   envelope (`{ "error" => ... }`, status 400/401/403/422) on what the caller
+  #   treated as a plain read.
+  # - on a **write** (`create`, `update`, `metadata`, and their siblings), any
+  #   non-2xx at all; a `404` there is the {NotFoundError} subclass.
   #
   # Before this existed, `find` unwrapped the success body by a fixed key
   # (`["work"]`, `["collection"]`, …); on an error envelope that key is
@@ -291,11 +295,11 @@ module AtlasRb
   # real cause (e.g. `… → 401: {"error":"invalid bearer token"}`) is
   # attributable everywhere `find` is used.
   #
-  # A genuine `404` is **not** this — it stays a clean `nil` return, since
-  # "not found" is a normal `find` outcome callers already nil-check. A `410`
-  # is also **not** this — a tombstoned resource comes back as `410 Gone` with
-  # its full body, which `find` returns (the caller nil-checks / reads
-  # `tombstoned`), rather than an error to raise.
+  # On the read path a genuine `404` is **not** this — it stays a clean `nil`
+  # return, since "not found" is a normal `find` outcome callers already
+  # nil-check. A `410` is also **not** this — a tombstoned resource comes back
+  # as `410 Gone` with its full body, which `find` returns (the caller
+  # nil-checks / reads `tombstoned`), rather than an error to raise.
   #
   # @note Authorization failures on the narrow re-parent / linked-member /
   #   Compilation write paths surface as {ForbiddenError} via
@@ -321,6 +325,26 @@ module AtlasRb
       @body = response&.body
     end
   end
+
+  # Raised when a **write** binding (`create`, `update`, `metadata`, `parent`,
+  # `rollback`, and their siblings) targets a resource Atlas answers `404` for —
+  # a mistyped or foreign NOID, or one re-parented away.
+  #
+  # A `404` on the read path is not this: {Resource.find} and its typed
+  # overrides return a clean `nil`, because "there is nothing there" answers a
+  # read. It cannot answer a write — the caller asked for a change that did not
+  # happen — so the write path raises instead of coercing to `nil`. Atlas
+  # renders the refusal as `head :not_found` with an empty body, which is what
+  # made the old blind `JSON.parse` surface it as
+  # `JSON::ParserError: unexpected end of input`: a message naming neither the
+  # resource nor the verb.
+  #
+  #   rescue AtlasRb::NotFoundError => e
+  #     report.rows.failed(row, "no such object in this repository")
+  #
+  # A subclass of {ResourceError}, so it carries the same `status` / `body` and
+  # a caller that only wants "the write failed" can rescue the parent.
+  class NotFoundError < ResourceError; end
 
   # Raised when the transport has no way to authenticate a relay request:
   # neither `ATLAS_JWT` (BYO-JWT mode) nor a signing key

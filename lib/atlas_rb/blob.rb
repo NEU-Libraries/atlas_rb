@@ -157,6 +157,10 @@ module AtlasRb
     #   `"digest"` (the recorded fixity digest, `"sha512:<hex>"`).
     # @raise [AtlasRb::FixityMismatchError] if `expected_digest` was supplied and
     #   the uploaded bytes did not match (or the algorithm is unsupported).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @note Streams the file (FD closed deterministically); a multi-GB upload is
     #   not buffered in memory. See {AtlasRb::FaradayHelper#with_file_part}.
@@ -175,9 +179,9 @@ module AtlasRb
         payload = { work_id: id, original_filename: original_filename, binary: part }
         payload[:expected_digest] = expected_digest if expected_digest
 
-        AtlasRb::Mash.new(JSON.parse(
+        AtlasRb::Mash.new(write_resource(
           multipart(nuid, on_behalf_of: on_behalf_of, idempotency_key: idempotency_key)
-            .post(ROUTE, payload)&.body
+            .post(ROUTE, payload)
         ))['blob']
       end
     end
@@ -223,6 +227,10 @@ module AtlasRb
     #   `"blob"`, with a refreshed `"digest"` for the new revision).
     # @raise [AtlasRb::FixityMismatchError] if `expected_digest` was supplied and
     #   the uploaded bytes did not match (or the algorithm is unsupported).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @note Streams the file with the FD closed deterministically — see {.create}.
     #
@@ -236,9 +244,9 @@ module AtlasRb
         payload = { binary: part }
         payload[:expected_digest] = expected_digest if expected_digest
 
-        AtlasRb::Mash.new(JSON.parse(
+        AtlasRb::Mash.new(write_resource(
           multipart(nuid, on_behalf_of: on_behalf_of, idempotency_key: idempotency_key)
-            .patch(ROUTE + id, payload)&.body
+            .patch(ROUTE + id, payload)
         ))
       end
     end
@@ -324,8 +332,9 @@ module AtlasRb
     # recopied. Avoids a full round-trip of the bytes back through the caller
     # (vs. re-streaming {.version_content} into {.update}).
     #
-    # Pass a `version_id` obtained from {.versions}. An unknown id or version
-    # yields a `404` (raw Faraday response).
+    # Pass a `version_id` obtained from {.versions}. Atlas answers an unknown id
+    # or version with a `404`, which raises {AtlasRb::NotFoundError} — a write
+    # that did not happen must not read like one that did.
     #
     # @param id [String] the Blob ID.
     # @param version_id [String] the OCFL version label to reinstate, e.g. `"v1"`.
@@ -337,13 +346,17 @@ module AtlasRb
     #   omitted.
     # @return [AtlasRb::Mash] the updated `"blob"` payload (NOID unchanged,
     #   `"digest"` refreshed to the reinstated bytes).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::Blob.rollback("b-321", "v1")
     def self.rollback(id, version_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .post("#{ROUTE}#{id}/rollback", JSON.dump(version_id: version_id))&.body
+          .post("#{ROUTE}#{id}/rollback", JSON.dump(version_id: version_id))
       ))['blob']
     end
   end

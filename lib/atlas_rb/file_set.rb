@@ -59,6 +59,10 @@ module AtlasRb
     # @return [Hash] the created `"file_set"` payload, including its `"id"`
     #   which can then be passed to {.update} to attach a binary, and its
     #   `"position"` (`nil` when unordered).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   fs = AtlasRb::FileSet.create("w-789", "primary")
@@ -74,9 +78,9 @@ module AtlasRb
     def self.create(id, classification, position: nil, idempotency_key: nil, nuid: nil, on_behalf_of: nil)
       params = { work_id: id, classification: classification }
       params[:position] = position if position
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection(params, nuid,
-                   on_behalf_of: on_behalf_of, idempotency_key: idempotency_key).post(ROUTE)&.body
+                   on_behalf_of: on_behalf_of, idempotency_key: idempotency_key).post(ROUTE)
       ))["file_set"]
     end
 
@@ -123,6 +127,10 @@ module AtlasRb
     # @return [Hash] the parsed JSON response from the patch (the `"file_set"`).
     # @raise [AtlasRb::FixityMismatchError] if `expected_digest` was supplied and
     #   the uploaded bytes did not match (or the algorithm is unsupported).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @note Streams the file with the FD closed deterministically — see
     #   {Blob.create} / {AtlasRb::FaradayHelper#with_file_part}.
@@ -141,9 +149,9 @@ module AtlasRb
         payload[:original_filename] = original_filename if original_filename
         payload[:expected_digest]   = expected_digest   if expected_digest
 
-        AtlasRb::Mash.new(JSON.parse(
+        AtlasRb::Mash.new(write_resource(
           multipart(nuid, on_behalf_of: on_behalf_of, idempotency_key: idempotency_key)
-            .patch(ROUTE + id, payload)&.body
+            .patch(ROUTE + id, payload)
         ))
       end
     end
@@ -172,6 +180,10 @@ module AtlasRb
     # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
     #   conflict that exhausted its internal retry budget (HTTP 409 with
     #   `error: "stale_resource"`).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
     #
     # @example
     #   AtlasRb::FileSet.set_iiif_service(
@@ -179,9 +191,9 @@ module AtlasRb
     #     "https://iiif.example.edu/iiif/3/abc.jp2"
     #   )
     def self.set_iiif_service(id, uri, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
+      AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + "/iiif_service", JSON.dump({ uri: uri }))&.body
+          .patch(ROUTE + id + "/iiif_service", JSON.dump({ uri: uri }))
       ))
     end
   end
