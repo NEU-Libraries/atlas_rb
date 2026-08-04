@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.10.0
+
+### Removed — `title` on `Person.create` and `Person.update`
+
+Atlas no longer holds a job title on a Person. The attribute claimed
+Blacklight's title namespace, where display and sorting expect the Person's
+name, so Atlas dropped it rather than renamed it: the field was display-only,
+optional, and absent from v1.
+
+The parameter therefore had nothing to write to. Atlas ignores an unknown key in
+a write body, so a caller that kept passing `title:` had its value discarded
+with no error and nothing in a log. That is the reason to remove the parameter
+rather than leave it accepted and inert.
+
+**Breaking.** `Person.create(…, title: "Professor")` now raises
+`ArgumentError: unknown keyword: :title`. Drop the argument at the call site;
+there is no replacement field.
+
 ## 1.9.4
 
 ### Fixed — write bindings parsed the response body without checking the status

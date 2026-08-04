@@ -85,7 +85,6 @@ module AtlasRb
     # @param display_name [String] authoritative display name.
     # @param bio [String, nil]
     # @param orcid [String, nil]
-    # @param title [String, nil]
     # @param on_behalf_of [String, nil] acting-as target (the acting principal
     #   itself comes from the ambient AtlasRb.config.default_nuid).
     # @return [AtlasRb::Mash] the unwrapped `"person"` object.
@@ -93,8 +92,8 @@ module AtlasRb
     #   resource, so the write did not happen.
     # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
     #   and body.
-    def self.create(nuid:, display_name:, bio: nil, orcid: nil, title: nil, on_behalf_of: nil)
-      body = { nuid: nuid, display_name: display_name, bio: bio, orcid: orcid, title: title }.compact
+    def self.create(nuid:, display_name:, bio: nil, orcid: nil, on_behalf_of: nil)
+      body = { nuid: nuid, display_name: display_name, bio: bio, orcid: orcid }.compact
       AtlasRb::Mash.new(write_resource(
         connection({}, nil, on_behalf_of: on_behalf_of).post(ROUTE, JSON.dump(body))
       ))["person"]
@@ -107,7 +106,6 @@ module AtlasRb
     # @param display_name [String, nil]
     # @param bio [String, nil]
     # @param orcid [String, nil]
-    # @param title [String, nil]
     # @param nuid [String, nil] acting principal.
     # @param on_behalf_of [String, nil] acting-as target.
     # @return [AtlasRb::Mash] the unwrapped, updated `"person"` object.
@@ -115,8 +113,8 @@ module AtlasRb
     #   resource, so the write did not happen.
     # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
     #   and body.
-    def self.update(id, display_name: nil, bio: nil, orcid: nil, title: nil, nuid: nil, on_behalf_of: nil)
-      body = { display_name: display_name, bio: bio, orcid: orcid, title: title }.compact
+    def self.update(id, display_name: nil, bio: nil, orcid: nil, nuid: nil, on_behalf_of: nil)
+      body = { display_name: display_name, bio: bio, orcid: orcid }.compact
       AtlasRb::Mash.new(write_resource(
         connection({}, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, JSON.dump(body))
       ))["person"]
