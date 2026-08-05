@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.10.1
+
+### Added — `Work.mark_incomplete` / `Work.clear_incomplete`
+
+A Work can now carry a second lifecycle state. `complete` says the deposit
+finished; `incomplete` says something downstream of it gave up. Before this
+there was no way to record that at all: every give-up handler wrote a
+`Rails.logger.warn` and nothing else, so a deposit whose PDF rendition
+exhausted its retries ended up with no rendition and no thumbnail, the
+depositor was not told, and no surface listed it.
+
+```ruby
+AtlasRb::Work.mark_incomplete(work_id, reason: "pdf_rendition_gave_up")
+AtlasRb::Work.clear_incomplete(work_id)
+```
+
+`reason` is a machine token, one per give-up handler. Atlas holds it as an
+opaque string and does **not** validate it against a list, so the vocabulary
+belongs to the caller and a new token needs no Atlas release. Map it to display
+text at the point of use, with a fallback for a token the view has not been
+taught.
+
+The flag **never hides** the Work. A record with its file, title and metadata
+but one missing derivative is degraded, not broken, and stays readable.
+
+Both bindings return the updated Work. `mark_incomplete` is idempotent and the
+last reason wins; `clear_incomplete` is idempotent too, and clears the flag and
+the reason together. Call it when a later run of the same job succeeds, which
+makes the state self-healing.
+
+### Added — `incomplete:` filter on `Work.list`
+
+`AtlasRb::Work.list(incomplete: true)` is the staff list of Works whose
+pipeline gave up, the sibling of the existing `in_progress:` "what's stuck?"
+view. The two are independent and combine: `in_progress: false, incomplete:
+true` reads as "finished, but degraded".
+
+Work summaries in the response now carry `incomplete` and `incomplete_reason`
+alongside `in_progress`.
+
 ## 1.10.0
 
 ### Removed — `title` on `Person.create` and `Person.update`

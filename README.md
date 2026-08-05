@@ -255,6 +255,28 @@ AtlasRb::Work.list(in_progress: false, page: 2)   # completed deposits, page 2
 AtlasRb::Work.complete("w-789")                   # mark w-789 done
 ```
 
+A Work carries a second, independent lifecycle state for the other kind of
+failure. `complete` says the deposit finished; `incomplete` says something
+downstream of it gave up — a rendition, the derivatives, the full-text
+extraction — after that job exhausted its retries. Call `mark_incomplete`
+from the give-up handler, and `clear_incomplete` when a later run succeeds,
+which makes the state self-healing.
+
+```ruby
+AtlasRb::Work.mark_incomplete("w-789", reason: "pdf_rendition_gave_up")
+AtlasRb::Work.clear_incomplete("w-789")
+AtlasRb::Work.list(incomplete: true)                       # the staff repair list
+AtlasRb::Work.list(in_progress: false, incomplete: true)   # finished, but degraded
+```
+
+`reason` is a machine token, one per give-up handler. Atlas stores it as an
+opaque string and does not validate it against a list, so the vocabulary is
+yours and a new token needs no Atlas release. Map it to display text at the
+point of use, with a fallback for a token the view has not been taught.
+
+The flag never hides the Work. A record with its file, title and metadata but
+one missing derivative is degraded, not broken, and stays readable.
+
 ### Audit-event history
 
 `Resource.history` wraps Atlas's `GET /resources/<id>/history` endpoint

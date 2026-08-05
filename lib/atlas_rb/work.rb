@@ -43,6 +43,11 @@ module AtlasRb
     #
     # @param in_progress [Boolean, nil] when set, filter to Works whose
     #   `in_progress` flag matches. Omit (or pass `nil`) for "all works".
+    # @param incomplete [Boolean, nil] when set, filter to Works whose
+    #   `incomplete` flag matches — the staff list of Works whose enrichment
+    #   pipeline gave up (see {.mark_incomplete}). Independent of
+    #   `in_progress:`, and the two combine: `in_progress: false,
+    #   incomplete: true` reads as "finished, but degraded".
     # @param page [Integer, nil] 1-indexed page number.
     # @param per_page [Integer, nil] page size override.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
@@ -53,16 +58,20 @@ module AtlasRb
     #   omitted.
     # @return [AtlasRb::Mash] `{ "works" => [...], "pagination" => {...} }`.
     #   Each entry in `"works"` is a Work summary (`id`, `title`,
-    #   `description`, `in_progress`).
+    #   `description`, `in_progress`, `incomplete`, `incomplete_reason`).
     #
     # @example Find stuck deposits
     #   AtlasRb::Work.list(in_progress: true)
     #
+    # @example Find works whose pipeline gave up
+    #   AtlasRb::Work.list(incomplete: true)
+    #
     # @example Page through all works
     #   AtlasRb::Work.list(page: 2, per_page: 50)
-    def self.list(in_progress: nil, page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
+    def self.list(in_progress: nil, incomplete: nil, page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
       params = {}
       params[:in_progress] = in_progress unless in_progress.nil?
+      params[:incomplete]  = incomplete  unless incomplete.nil?
       params[:page]        = page        if page
       params[:per_page]    = per_page    if per_page
       AtlasRb::Mash.new(JSON.parse(
@@ -230,6 +239,88 @@ module AtlasRb
     #   AtlasRb::Work.complete("w-789")
     def self.complete(id, nuid: nil, on_behalf_of: nil)
       connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/complete')
+    end
+
+    # Flag a Work whose enrichment pipeline gave up.
+    #
+    # The counterpart to {.complete}, for the other half of the lifecycle:
+    # `complete` says the deposit finished, this says something downstream of
+    # it did not. Call it from a work-scoped job's give-up handler — the PDF or
+    # media rendition, the derivatives, the full-text extraction — once that
+    # job has exhausted its retries. Atlas's `GET /works?incomplete=true` then
+    # lists the Work for staff, and `incomplete_bsi` on its Solr document lets
+    # a result row render a pill without a per-row fetch.
+    #
+    # The flag **never hides** the Work. A record with its file, title and
+    # metadata but one missing derivative is degraded, not broken, and stays
+    # readable — enrichment does not fail a deposit.
+    #
+    # Idempotent on the server; the last reason wins. Clear it with
+    # {.clear_incomplete} when a later run of the same job succeeds, which
+    # makes the state self-healing.
+    #
+    # @param id [String] the Work ID.
+    # @param reason [String, nil] a machine token naming the cause — one per
+    #   give-up handler, e.g. `"pdf_rendition_gave_up"`,
+    #   `"media_rendition_gave_up"`, `"ingest_gave_up"`. Atlas stores it as an
+    #   opaque string and does **not** validate it against a list, so the
+    #   vocabulary is the caller's and a new token needs no Atlas release. Map
+    #   it to display text at the point of use, with a fallback for a token the
+    #   view has not been taught. A blank reason still sets the flag.
+    # @param nuid [String, nil] optional NUID of the acting user.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Hash] the updated Work, the same shape {.find} returns, carrying
+    #   `incomplete` and `incomplete_reason`.
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
+    #
+    # @example In a give-up handler
+    #   AtlasRb::Work.mark_incomplete(work_id, reason: "pdf_rendition_gave_up")
+    def self.mark_incomplete(id, reason:, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(write_resource(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .post(ROUTE + id + '/incomplete', JSON.dump(reason: reason))
+      ))["work"]
+    end
+
+    # Clear the incomplete flag and its reason.
+    #
+    # The repair half of {.mark_incomplete}: call it from the same job when a
+    # later run succeeds, or by hand once an operator has fixed the Work. Both
+    # fields clear together — a reason without a flag would leave a stale cause
+    # on the Solr document.
+    #
+    # Idempotent: clearing a Work that was never flagged is a no-op.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional NUID of the acting user.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Hash] the updated Work, the same shape {.find} returns, with
+    #   `incomplete` false and `incomplete_reason` null.
+    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
+    #   conflict that exhausted its internal retry budget (HTTP 409 with
+    #   `error: "stale_resource"`).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
+    #   resource, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
+    #   and body.
+    #
+    # @example On a later successful run
+    #   AtlasRb::Work.clear_incomplete(work_id)
+    def self.clear_incomplete(id, nuid: nil, on_behalf_of: nil)
+      AtlasRb::Mash.new(write_resource(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .delete(ROUTE + id + '/incomplete')
+      ))["work"]
     end
 
     # Replace a Work's metadata by uploading a MODS XML document.
