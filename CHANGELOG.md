@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.11.0
+
+### Added — `Work.associations` / `.associate` / `.disassociate`
+
+DRS v1 let a depositor declare that one object is the codebook, figure,
+transcription, instructional material or supplemental material **for** another.
+The two objects stayed separate records, and each one's page showed the link
+from its own end. Atlas now records this again, and these three bindings reach
+it.
+
+```ruby
+AtlasRb::Work.associate(codebook_id, dataset_id, type: "is_codebook_for")
+AtlasRb::Work.associations(dataset_id)
+# => {"outbound" => {}, "inbound" => {"is_codebook_for" => ["w-codebook"]}}
+AtlasRb::Work.disassociate(codebook_id, dataset_id, type: "is_codebook_for")
+```
+
+All three return the same shape, so a mutation needs no follow-up read.
+`outbound` is what the Work asserts; `inbound` is what other Works assert about
+it. The edge is stored once, on the asserting Work, and Atlas derives the other
+direction — so the two can never drift apart.
+
+The five predicates are in `AtlasRb::Work::ASSOCIATION_TYPES`, for building a
+select box without hard-coding the vocabulary. A sixth needs an Atlas release,
+so the list cannot get ahead of the server.
+
+Writes are admin / devolved-admin only: the claim renders on the target's page
+too, and the asserter often holds no rights over it.
+
+### Added — `WorkAssociationError`
+
+A `422` on an association path now raises a typed error carrying `#code`
+(`invalid_type`, `target_not_found`, `invalid_target_type`,
+`self_association`, `tombstoned_work`, `tombstoned_target`). A `403` raises the
+existing `ForbiddenError`. Without these the binding would return the envelope
+as if it were a success and the rejection would be silently discarded.
+
+### Changed — the `destroy` docstrings now describe a purge
+
+`Admin::{Work,Collection,Community}.destroy`, `FileSet.destroy` and
+`Blob.destroy` previously promised more than the server did: the docstrings
+claimed a cascade and removal "from Atlas storage" while the server deleted one
+Postgres row and one Solr document, leaving every byte on disk.
+
+Atlas has since made `destroy` mean what the docstrings said, and they are
+updated to match what it now does — including the parts they never mentioned:
+
+- Deleting a Blob or a FileSet removes the **whole OCFL object**, so every
+  retained revision goes, not only the current one. `versions` and `rollback`
+  have nothing left to work with afterwards.
+- `Admin::Collection.destroy` and `Admin::Community.destroy` refuse with a
+  `422` (`has_children`) while the container still holds a member, **including
+  a tombstoned one**. That is stricter than `tombstone`, which counts only live
+  members: a purge cannot be undone, so a member left behind is orphaned for
+  good.
+
+No signature changed; this release is additive.
+
 ## 1.10.1
 
 ### Added — `Work.mark_incomplete` / `Work.clear_incomplete`

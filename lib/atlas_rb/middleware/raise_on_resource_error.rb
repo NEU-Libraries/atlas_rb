@@ -15,7 +15,8 @@ module AtlasRb
     # {RaiseOnStaleResource}.
     #
     # It is intentionally narrow — it only fires on the re-parent
-    # (`.../parent`) and linked-member (`.../linked_members...`) write paths,
+    # (`.../parent`), linked-member (`.../linked_members...`) and association
+    # (`.../associations...`) write paths,
     # the Compilation surface (`/compilations...`), the derivative-permissions
     # write (`.../derivative_permissions`), the container-create endpoints
     # ({CREATE_PATHS}), and binary uploads (`/files...`, `/file_sets...`), and
@@ -37,6 +38,7 @@ module AtlasRb
     # - `403` on a re-parent/linked/Compilation/derivative-permissions/create path → {AtlasRb::ForbiddenError}
     # - `422` on `.../parent` → {AtlasRb::ReparentError} (`error`/`resource_id`)
     # - `422` on `.../linked_members...` → {AtlasRb::LinkedMemberError}
+    # - `422` on `.../associations...` → {AtlasRb::WorkAssociationError}
     # - `422` on `/compilations...` → {AtlasRb::CompilationError}
     # - `422` on `.../derivative_permissions` → {AtlasRb::DerivativePermissionsError}
     # - `422` + an ACL discriminator anywhere → {AtlasRb::PermissionsError}
@@ -63,6 +65,7 @@ module AtlasRb
       # @raise [AtlasRb::ForbiddenError] on a 403 to a re-parent/linked/Compilation/create path.
       # @raise [AtlasRb::ReparentError] on a 422 to a re-parent path.
       # @raise [AtlasRb::LinkedMemberError] on a 422 to a linked-member path.
+      # @raise [AtlasRb::WorkAssociationError] on a 422 to an association path.
       # @raise [AtlasRb::CompilationError] on a 422 to a Compilation path.
       # @raise [AtlasRb::DerivativePermissionsError] on a 422 to a derivative-permissions path.
       # @raise [AtlasRb::PermissionsError] on a 422 carrying an ACL-invariant discriminator.
@@ -74,6 +77,7 @@ module AtlasRb
         path        = env.url&.path.to_s
         reparent    = path.end_with?("/parent")
         linked      = path.include?("/linked_members")
+        association = path.include?("/associations")
         compilation = path.start_with?("/compilations")
         deriv_perms = path.end_with?("/derivative_permissions")
         create      = env.method.to_s == "post" && CREATE_PATHS.include?(path.chomp("/"))
@@ -92,11 +96,11 @@ module AtlasRb
           )
         end
 
-        return unless reparent || linked || compilation || deriv_perms || create || upload
+        return unless reparent || linked || association || compilation || deriv_perms || create || upload
 
         if env.status == 403
           # 403s on upload paths stay raw — acting-as/authz isn't an upload concern here.
-          return unless reparent || linked || compilation || deriv_perms || create
+          return unless reparent || linked || association || compilation || deriv_perms || create
 
           raise AtlasRb::ForbiddenError.new(
             body["message"] || "Atlas refused the request",
@@ -113,6 +117,12 @@ module AtlasRb
         elsif linked
           raise AtlasRb::LinkedMemberError.new(
             body["message"] || "Atlas rejected the linked-member write",
+            code: body["error"],
+            resource_id: body["resource_id"]
+          )
+        elsif association
+          raise AtlasRb::WorkAssociationError.new(
+            body["message"] || "Atlas rejected the association write",
             code: body["error"],
             resource_id: body["resource_id"]
           )

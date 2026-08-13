@@ -101,6 +101,38 @@ module AtlasRb
     end
   end
 
+  # Raised when Atlas rejects a Work-association write
+  # (`POST` / `DELETE /works/:id/associations...`) with a `422` carrying a
+  # machine-readable `error` discriminator — `invalid_type` (not one of the
+  # five predicates), `target_not_found`, `invalid_target_type` (the target is
+  # not a Work), `self_association`, `tombstoned_work`, or `tombstoned_target`.
+  #
+  # The association sibling of {LinkedMemberError}; same shape, same rationale
+  # (the binding would otherwise discard the envelope on a non-2xx).
+  #
+  #   rescue AtlasRb::WorkAssociationError => e
+  #     flash.now[:alert] = t("associations.errors.#{e.code}", default: e.message)
+  #
+  # @note Authorization failures surface as {ForbiddenError} (HTTP 403) —
+  #   asserting an association is admin / devolved-admin only.
+  class WorkAssociationError < Error
+    # @return [String, nil] the machine-readable error code from the envelope,
+    #   suitable for keying an i18n map.
+    attr_reader :code
+
+    # @return [String, nil] the rejected Work's ID, from the envelope.
+    attr_reader :resource_id
+
+    # @param message [String] human-readable rejection description.
+    # @param code [String, nil] the envelope's `error` discriminator.
+    # @param resource_id [String, nil] the rejected Work's ID.
+    def initialize(message, code: nil, resource_id: nil)
+      super(message)
+      @code = code
+      @resource_id = resource_id
+    end
+  end
+
   # Raised when Atlas rejects a Compilation (Set) write with a `422`
   # carrying a machine-readable `error` discriminator — a blank title on
   # create/update (`invalid_record`), or a membership add whose noid does

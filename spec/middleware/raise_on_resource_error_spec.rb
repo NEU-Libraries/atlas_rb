@@ -74,6 +74,41 @@ RSpec.describe AtlasRb::Middleware::RaiseOnResourceError do
     end
   end
 
+  describe "association path" do
+    it "raises WorkAssociationError on a 422 to POST .../associations" do
+      conn = connection do |s|
+        s.post("/works/w-1/associations") do
+          [422, {}, '{"error":"invalid_type","resource_id":"w-1","message":"unknown association type is_sequel_to"}']
+        end
+      end
+      expect { conn.post("/works/w-1/associations") }.to raise_error(AtlasRb::WorkAssociationError) do |e|
+        expect(e.code).to eq("invalid_type")
+        expect(e.resource_id).to eq("w-1")
+      end
+    end
+
+    it "raises WorkAssociationError on a 422 to the DELETE path (type + target in the path)" do
+      conn = connection do |s|
+        s.delete("/works/w-1/associations/is_codebook_for/w-2") do
+          [422, {}, '{"error":"target_not_found","resource_id":"w-1"}']
+        end
+      end
+      expect { conn.delete("/works/w-1/associations/is_codebook_for/w-2") }
+        .to raise_error(AtlasRb::WorkAssociationError) { |e| expect(e.code).to eq("target_not_found") }
+    end
+
+    # Associating is admin / devolved-admin only, so a 403 is an ordinary
+    # outcome here and must stay distinguishable from a structural rejection.
+    it "raises ForbiddenError on a 403 to .../associations" do
+      conn = connection do |s|
+        s.post("/works/w-1/associations") { [403, {}, '{"error":"forbidden","action":"associate"}'] }
+      end
+      expect { conn.post("/works/w-1/associations") }.to raise_error(AtlasRb::ForbiddenError) do |e|
+        expect(e.action).to eq("associate")
+      end
+    end
+  end
+
   describe "pre-existing mappings (regression)" do
     it "still raises ReparentError on a 422 to .../parent" do
       conn = connection do |s|

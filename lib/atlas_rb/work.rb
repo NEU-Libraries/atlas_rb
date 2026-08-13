@@ -799,5 +799,128 @@ module AtlasRb
           .delete(ROUTE + work_id + '/linked_members/' + collection_id)
       )
     end
+
+    # The five relationship predicates Atlas accepts, carried here so a caller
+    # can build a select box without hard-coding the vocabulary. Adding a sixth
+    # needs an Atlas release, so this list cannot drift ahead of the server.
+    ASSOCIATION_TYPES = %w[
+      is_codebook_for
+      is_figure_for
+      is_instructional_material_for
+      is_supplemental_material_for
+      is_transcription_of
+    ].freeze
+
+    # List a Work's typed associations with other Works.
+    #
+    # Wraps `GET /works/<id>/associations`. An association is DRS v1's
+    # "associated works": a directed claim that one object is the codebook,
+    # figure, transcription, instructional material or supplemental material
+    # **for** another. Both objects stay separate records — this is not
+    # membership, and nothing moves in the containment tree.
+    #
+    # The edge is stored once, on the Work that asserts it. Atlas derives the
+    # other direction, so `outbound` and `inbound` can never disagree.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Hash] `{"outbound" => {predicate => [noid, …]}, "inbound" => {…}}`.
+    #   `outbound` is what this Work asserts, `inbound` what other Works assert
+    #   about it. Predicates holding no edges are omitted, so both maps are
+    #   `{}` for an unassociated Work.
+    #
+    # @example
+    #   AtlasRb::Work.associations("w-789")
+    #   # => {"outbound" => {"is_codebook_for" => ["w-123"]}, "inbound" => {}}
+    def self.associations(id, nuid: nil, on_behalf_of: nil)
+      JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/associations')&.body
+      )
+    end
+
+    # Assert that this Work stands in a typed relationship to another Work.
+    #
+    # Wraps `POST /works/<id>/associations` with a `work_id` + `type` body.
+    # The edge is stored on **this** Work only; `target` reports the same edge
+    # under `inbound`. Asserting an edge that already exists is a no-op, and
+    # two Works can hold several different edges at once.
+    #
+    # A cycle is permitted and meaningful — "A is a transcription of B" and
+    # "B is a figure for A" can both be true.
+    #
+    # @param work_id [String] the asserting Work's ID (the codebook, figure, …).
+    # @param target_id [String] the Work being pointed at (the dataset, article, …).
+    # @param type [String] one of {ASSOCIATION_TYPES}.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Hash] the Work's associations *after* the add, in the
+    #   {.associations} shape — so no follow-up GET is needed.
+    # @raise [AtlasRb::WorkAssociationError] if Atlas rejects the claim (HTTP
+    #   422): unknown type, unresolvable target, a non-Work target, the Work
+    #   itself, or either end tombstoned. The envelope's `error` code is
+    #   exposed as `#code`.
+    # @raise [AtlasRb::ForbiddenError] if Atlas refuses the write (HTTP 403).
+    #   Associating is admin / devolved-admin only, because the claim renders
+    #   on the target's page too.
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no
+    #   such Work, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's
+    #   status and body.
+    #
+    # @example
+    #   AtlasRb::Work.associate("w-789", "w-123", type: "is_codebook_for")
+    #   # => {"outbound" => {"is_codebook_for" => ["w-123"]}, "inbound" => {}}
+    def self.associate(work_id, target_id, type:, nuid: nil, on_behalf_of: nil)
+      write_resource(
+        connection({ work_id: target_id, type: type }, nuid, on_behalf_of: on_behalf_of)
+          .post(ROUTE + work_id + '/associations')
+      )
+    end
+
+    # Retract one typed relationship between two Works.
+    #
+    # Wraps `DELETE /works/<id>/associations/<type>/<target_id>` — the type is
+    # a path segment because it is part of the edge's identity, so retracting
+    # the figure claim leaves a transcription claim between the same two Works
+    # standing. Idempotent: retracting an edge that was never asserted is a
+    # no-op.
+    #
+    # @param work_id [String] the asserting Work's ID.
+    # @param target_id [String] the associated Work to drop.
+    # @param type [String] the predicate to retract, one of {ASSOCIATION_TYPES}.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Hash] the Work's remaining associations, in the {.associations}
+    #   shape.
+    # @raise [AtlasRb::WorkAssociationError] if Atlas rejects the write (HTTP
+    #   422) — an unresolvable target is the usual cause here.
+    # @raise [AtlasRb::ForbiddenError] if Atlas refuses the write (HTTP 403).
+    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no
+    #   such Work, so the write did not happen.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's
+    #   status and body.
+    #
+    # @example
+    #   AtlasRb::Work.disassociate("w-789", "w-123", type: "is_codebook_for")
+    #   # => {"outbound" => {}, "inbound" => {}}
+    def self.disassociate(work_id, target_id, type:, nuid: nil, on_behalf_of: nil)
+      write_resource(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .delete(ROUTE + work_id + '/associations/' + type.to_s + '/' + target_id)
+      )
+    end
   end
 end
