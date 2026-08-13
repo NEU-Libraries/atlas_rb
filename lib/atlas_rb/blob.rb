@@ -186,7 +186,12 @@ module AtlasRb
       end
     end
 
-    # Delete a Blob (the bytes *and* the metadata record).
+    # Delete a Blob: the metadata record **and** the bytes.
+    #
+    # Atlas removes the whole OCFL object, so **every retained revision** goes,
+    # not only the current one — {.versions} and {.rollback} have nothing left
+    # to work with afterwards. Unrecoverable, and admin-only. The Blob is also
+    # unlinked from its FileSet, whose METS is rebuilt.
     #
     # @param id [String] the Blob ID.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing

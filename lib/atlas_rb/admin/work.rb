@@ -13,11 +13,16 @@ module AtlasRb
       # @api private
       ROUTE = "/works/"
 
-      # Hard-delete a Work.
+      # Hard-delete a Work — a purge, not a withdrawal.
       #
-      # Removes the Work, its FileSets, and their Blobs from Atlas
-      # storage. Unrecoverable — prefer {AtlasRb::Work.tombstone} for
-      # the user-visible withdrawal path. This is operator-only.
+      # Removes the Work's metadata, cascades into its FileSets and their
+      # Blobs, and removes the OCFL objects holding the preserved bytes:
+      # every retained revision, not only the current one. Nothing
+      # survives but the audit row, which records the NOIDs it removed.
+      #
+      # Unrecoverable — prefer {AtlasRb::Work.tombstone} for the
+      # user-visible withdrawal path, which keeps everything and can be
+      # reversed. Admin-only.
       #
       # @param id [String] the Work ID.
       # @param confirm [Symbol] must be `:i_understand`. Any other value

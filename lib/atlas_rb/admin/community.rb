@@ -13,10 +13,18 @@ module AtlasRb
       # @api private
       ROUTE = "/communities/"
 
-      # Hard-delete a Community.
+      # Hard-delete a Community — a purge, not a withdrawal.
       #
+      # Removes the Community's metadata, its descriptive-metadata
+      # FileSet, and the OCFL objects holding the preserved bytes.
       # Unrecoverable — prefer {AtlasRb::Community.tombstone} for
-      # user-visible withdrawal. Operator-only.
+      # user-visible withdrawal. Admin-only.
+      #
+      # Atlas refuses with a `422` (`has_children`) while the Community
+      # still holds a Collection or a sub-community, **including
+      # tombstoned ones**. That is stricter than tombstone, which counts
+      # only live members: a member left behind by a purge is orphaned
+      # for good. Empty the tree leaf-first.
       #
       # @param id [String] the Community ID.
       # @param confirm [Symbol] must be `:i_understand`. Any other value

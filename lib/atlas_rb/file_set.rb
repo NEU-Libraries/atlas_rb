@@ -84,7 +84,12 @@ module AtlasRb
       ))["file_set"]
     end
 
-    # Delete a FileSet.
+    # Delete a FileSet, its Blobs, and their bytes.
+    #
+    # Atlas cascades into the FileSet's Blobs and removes each one's OCFL
+    # object, so every retained revision of those binaries goes too.
+    # Unrecoverable, and admin-only. The parent Work's METS structMap is
+    # rebuilt without the removed pages.
     #
     # @param id [String] the FileSet ID.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
