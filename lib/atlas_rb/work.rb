@@ -58,7 +58,10 @@ module AtlasRb
     #   omitted.
     # @return [AtlasRb::Mash] `{ "works" => [...], "pagination" => {...} }`.
     #   Each entry in `"works"` is a Work summary (`id`, `title`,
-    #   `description`, `in_progress`, `incomplete`, `incomplete_reason`).
+    #   `description`, `in_progress`, `incomplete`, `incomplete_reason`,
+    #   `handle`). `handle` is carried on the summary, not just the detail
+    #   read, so "which Works never minted?" is answerable from one page
+    #   rather than a fetch per row.
     #
     # @example Find stuck deposits
     #   AtlasRb::Work.list(in_progress: true)
@@ -220,10 +223,27 @@ module AtlasRb
     # "stuck" list.
     #
     # Idempotent on the server: calling `complete` on an already-complete
-    # Work is a no-op — Atlas simply re-saves with `in_progress: false`.
+    # Work is a no-op — Atlas re-saves with `in_progress: false`.
     # Atlas does not currently stamp a `completed_by` audit field; the
     # `nuid:` parameter is plumbed through for parity with the other
     # lifecycle bindings and in case Atlas adds completion audit later.
+    #
+    # **This call also mints the Work's persistent identifier.** Atlas
+    # registers `<prefix>/<noid>` with its Handle service, pointed at the
+    # public Work page, and records it as `handle` on the Work. Two
+    # consequences for a caller:
+    #
+    # * **Minting can never fail the call.** A handle server that is down,
+    #   slow or unconfigured leaves `handle` null and the Work still
+    #   complete — never a non-2xx. So a `200` does not promise a handle:
+    #   the response body carries the Work, so check `handle` on it rather
+    #   than assuming success minted one.
+    # * **Re-completing is safe.** Atlas mints only when `handle` is empty,
+    #   and the underlying registration is keyed by handle name, so a repeat
+    #   call re-points rather than minting a second identifier.
+    #
+    # A deployment with no handle server configured mints nothing at all,
+    # which is the normal state for a stack brought up without it.
     #
     # @param id [String] the Work ID.
     # @param nuid [String, nil] optional NUID of the acting user.
