@@ -55,12 +55,13 @@ module AtlasRb
     #   server-side).
     # @param nuid [String, nil] acting principal.
     # @param on_behalf_of [String, nil] acting-as target.
-    # @return [Array<AtlasRb::Mash>] one unwrapped `"person"` per row on the page.
+    # @return [Array<AtlasRb::Mash>] one Person per row on the page. Returns
+    #   the rows alone; the pagination block is dropped.
     def self.list(page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
       params = { page: page, per_page: per_page }.compact
       JSON.parse(
         connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE)&.body
-      )["people"].map { |entry| AtlasRb::Mash.new(entry["person"]) }
+      )["people"].map { |entry| AtlasRb::Mash.new(entry) }
     end
 
     # Batch-resolve people to their authoritative display_name in one call
@@ -71,12 +72,12 @@ module AtlasRb
     # @param nuids [Array<String>] the NUIDs to resolve.
     # @param nuid [String, nil] acting principal.
     # @param on_behalf_of [String, nil] acting-as target.
-    # @return [Array<AtlasRb::Mash>] one unwrapped `"person"` per resolved NUID
-    #   (each carries `nuid`, `affiliated_community_ids`, and `personal_root_id`).
+    # @return [Array<AtlasRb::Mash>] one Person per resolved NUID (each carries
+    #   `nuid`, `affiliated_community_ids`, and `personal_root_id`).
     def self.resolve(nuids, nuid: nil, on_behalf_of: nil)
       JSON.parse(
         connection({ nuids: Array(nuids).join(",") }, nuid, on_behalf_of: on_behalf_of).get(ROUTE)&.body
-      )["people"].map { |entry| AtlasRb::Mash.new(entry["person"]) }
+      )["people"].map { |entry| AtlasRb::Mash.new(entry) }
     end
 
     # Create a Person. One Person per NUID — a duplicate NUID is a 409.

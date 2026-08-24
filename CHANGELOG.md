@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.12.0
+
+### Changed — index rows arrive flat
+
+Atlas no longer wraps each row of a paginated index in its type name. `GET
+/works` used to hand back `{"work" => {...}}` per row; it now hands back the
+summary itself. The same applies to `/collections`, `/communities`, `/blobs`,
+`/file_sets`, `/people` and `/compilations`. A single resource is still wrapped
+in its type name — only rows inside a named collection changed.
+
+```ruby
+AtlasRb::Work.list(in_progress: true)["works"].map { |row| row["id"] }
+# was: row["work"]["id"]
+```
+
+`Person.list` and `Person.resolve` unwrapped the row for you, so their return
+value is unchanged. `Work.list` and `Compilation.list` return Atlas's envelope
+as-is, so callers reading `row["work"]` or `row["compilation"]` must drop that
+step.
+
+**This release requires Atlas 0.6.158 or newer.** Pairing 1.12.0 with an older
+Atlas makes `Person.list` and `Person.resolve` return rows of nils.
+
+### Fixed — `Work.list` documentation
+
+The envelope was described as matching `Community.children`, which returns a
+bare array of noid strings — a third shape. It carries `works` and
+`pagination`.
+
 ## 1.11.0
 
 ### Added — `Work.associations` / `.associate` / `.disassociate`

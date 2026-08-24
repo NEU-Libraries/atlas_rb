@@ -37,9 +37,9 @@ module AtlasRb
 
     # List Works, paginated.
     #
-    # Wraps `GET /works`. Returns the full pagination envelope rather than a
-    # bare array so callers can page through results — the shape matches
-    # {AtlasRb::Community.children} and {AtlasRb::Collection.children}.
+    # Wraps `GET /works`. Returns the full pagination envelope — `works` plus
+    # `pagination` — rather than a bare array, so callers can page through
+    # results.
     #
     # @param in_progress [Boolean, nil] when set, filter to Works whose
     #   `in_progress` flag matches. Omit (or pass `nil`) for "all works".
@@ -57,7 +57,7 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @return [AtlasRb::Mash] `{ "works" => [...], "pagination" => {...} }`.
-    #   Each entry in `"works"` is a Work summary (`id`, `title`,
+    #   Each entry in `"works"` is a flat Work summary (`id`, `title`,
     #   `description`, `in_progress`, `incomplete`, `incomplete_reason`,
     #   `handle`). `handle` is carried on the summary, not just the detail
     #   read, so "which Works never minted?" is answerable from one page

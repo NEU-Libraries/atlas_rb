@@ -89,7 +89,8 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @return [AtlasRb::Mash] `{ "compilations" => [...], "pagination" => {...} }`.
-    #   Each entry wraps the same `"compilation"` object {.find} returns.
+    #   Each entry in `"compilations"` is a flat Compilation, carrying the
+    #   same keys {.find} returns.
     # @raise [AtlasRb::ForbiddenError] on a cross-owner listing without admin.
     #
     # @example My Sets
