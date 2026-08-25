@@ -523,7 +523,7 @@ Read the flag to render a banner before a caller trips it. The read is answered
 even while the window is open, so a client can always see the flag it honours:
 
 ```ruby
-window = AtlasRb::Maintenance.read
+window = AtlasRb::Maintenance.read(nuid: current_user.nuid)
 window["read_only"]    # => true
 window["source"]       # => "deploy" / "operator"
 window["message"]      # => "Scheduled maintenance until 10:00"

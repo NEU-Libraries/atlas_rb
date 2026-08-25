@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.13.1
+
+### Fixed — `Maintenance.read` could not name an acting principal
+
+`AtlasRb::Maintenance.read` took no `nuid:`, unlike every other read binding,
+so on the relay-signing path it had no NUID to sign into the assertion `sub`
+and raised `ConfigurationError`. It worked only in BYO-JWT mode or when the
+host configured `AtlasRb.config.default_nuid`. It now takes `nuid:` and
+`on_behalf_of:` like its neighbours.
+
+```ruby
+AtlasRb::Maintenance.read(nuid: current_user.nuid)
+```
+
+`.write` is unchanged — it runs on the system connection, which deliberately
+never consults ambient identity.
+
 ## 1.13.0
 
 ### Added — maintenance mode no longer passes through silently

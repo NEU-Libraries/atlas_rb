@@ -15,9 +15,10 @@ RSpec.describe AtlasRb::Maintenance do
                                           '"since":"2026-08-25T09:14:00Z",' \
                                           '"message":"Scheduled maintenance until 10:00",' \
                                           '"retry_after":900}'))
-      allow(described_class).to receive(:connection).with({}).and_return(conn)
+      allow(described_class).to receive(:connection)
+        .with({}, "000000004", on_behalf_of: nil).and_return(conn)
 
-      result = described_class.read
+      result = described_class.read(nuid: "000000004")
 
       expect(result["read_only"]).to be(true)
       expect(result["source"]).to eq("deploy")

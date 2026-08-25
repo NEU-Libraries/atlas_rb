@@ -33,11 +33,18 @@ module AtlasRb
     # Cheap and safe to poll behind a short-TTL cache; Cerberus renders its
     # banner and its client-side write gate from this.
     #
+    # @param nuid [String, nil] the acting NUID, signed into the assertion `sub`
+    #   on the relay path. Optional only in BYO-JWT mode or when the host
+    #   configures {AtlasRb.config#default_nuid}; the read sits behind Atlas's
+    #   authenticated read floor, so it needs a principal like any other read.
+    # @param on_behalf_of [String, nil] optional NUID carried as a signed `obo`
+    #   claim.
     # @return [AtlasRb::Mash] `read_only` (Boolean), `source`
     #   (`"operator"` / `"deploy"` / nil), `since` (ISO-8601 or nil), `message`
     #   (String or nil), and `retry_after` (Integer seconds).
-    def self.read
-      AtlasRb::Mash.new(JSON.parse(connection({}).get("/maintenance").body))
+    def self.read(nuid: nil, on_behalf_of: nil)
+      response = connection({}, nuid, on_behalf_of: on_behalf_of).get("/maintenance")
+      AtlasRb::Mash.new(JSON.parse(response.body))
     end
 
     # Open or close the window (`PUT /maintenance`). System-gated in Atlas.
