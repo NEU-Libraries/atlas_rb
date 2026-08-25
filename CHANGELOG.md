@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.13.0
+
+### Added — maintenance mode no longer passes through silently
+
+Atlas can now hold a repository-wide read-only window, refusing every write
+with `503` + `error: "read_only_mode"`. Before this release a `503` reached
+neither `RaiseOnStaleResource` (409-only) nor `RaiseOnResourceError`
+(403/422-only), and the body carries no `"work"` / `"collection"` key — so the
+binding unwrapped `nil` and returned it. The write silently no-opped and the
+caller's UI reported success. During a window that meant a librarian saving
+metadata, seeing no error, and losing the edit.
+
+`AtlasRb::Middleware::RaiseOnReadOnlyMode` now raises
+`AtlasRb::ReadOnlyModeError` on that pair, on every path and all three
+connection builders. It carries `#code` and `#retry_after` (from Atlas's
+`Retry-After` header).
+
+```ruby
+rescue AtlasRb::ReadOnlyModeError => e
+  e.retry_after  # => 900
+```
+
+It is keyed on the discriminator as well as the status, so a bodyless `503`
+from a reverse proxy while Atlas restarts still passes through untouched.
+
+`AtlasRb::Maintenance.read` / `.write` read and set the flag. `.read` sits on
+the authenticated read floor and is answered while the window is open, so a
+client can always see the flag it is honouring; `.write` is system-gated.
+
+A minor bump rather than a patch: a new exception can now raise where callers
+previously got `nil`.
+
+**This release requires Atlas 0.6.159 or newer** for the `/maintenance`
+endpoints. The middleware is inert against an older Atlas, which never sends
+the discriminator.
+
 ## 1.12.0
 
 ### Changed — index rows arrive flat

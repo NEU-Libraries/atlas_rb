@@ -497,6 +497,56 @@ caller reads `tombstoned`. And the typed `403` / `422` translations above still
 fire first, while `tombstone` / `destroy` / `complete` keep returning the raw
 Faraday response for the caller to read.
 
+### Maintenance mode (the read-only window)
+
+Atlas can be put into a repository-wide read-only window: reads keep being
+served, every write is refused, migrations run, the operator closes it. Three
+doors open the same window — Cerberus's admin hub, Atlas's `maintenance:open`
+rake task, and the deploy orchestrator.
+
+Refused writes raise on **every** binding and **every** path:
+
+```ruby
+begin
+  AtlasRb::Work.update("w-789", metadata)
+rescue AtlasRb::ReadOnlyModeError => e
+  e.retry_after  # => 900 (seconds, from Atlas's Retry-After header)
+  e.message      # => "Atlas is in maintenance mode; writes are refused"
+end
+```
+
+This is deliberately not `ForbiddenError`. Atlas answers `503`, not `403`,
+because a 403 is a statement about the caller's rights — during a migration
+window the caller's rights are fine, the repository is closed.
+
+Read the flag to render a banner before a caller trips it. The read is answered
+even while the window is open, so a client can always see the flag it honours:
+
+```ruby
+window = AtlasRb::Maintenance.read
+window["read_only"]    # => true
+window["source"]       # => "deploy" / "operator"
+window["message"]      # => "Scheduled maintenance until 10:00"
+window["retry_after"]  # => 900
+```
+
+Opening and closing is system-gated:
+
+```ruby
+AtlasRb::Maintenance.write(read_only: true, source: "deploy")
+AtlasRb::Maintenance.write(read_only: false, source: "deploy")
+```
+
+`source` carries one rule: a `"deploy"` close is refused when an `"operator"`
+opened the window, so a deploy that finishes cannot close a window a human
+opened by hand. The refusal is not an error — Atlas answers `200` with the
+*unchanged* state — so read `read_only` off the return value rather than
+assuming the write took. An `"operator"` close clears either.
+
+A `503` from a reverse proxy while Atlas restarts carries no JSON body and is
+a different condition with a different remedy, so it passes through as a plain
+response rather than raising.
+
 ## End-to-end example
 
 JSON responses come back as `AtlasRb::Mash` (a `Hashie::Mash` subclass), so

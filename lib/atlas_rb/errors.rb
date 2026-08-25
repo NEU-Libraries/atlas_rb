@@ -378,6 +378,48 @@ module AtlasRb
   # a caller that only wants "the write failed" can rescue the parent.
   class NotFoundError < ResourceError; end
 
+  # Raised when Atlas refuses a write because the repository-wide maintenance
+  # window is open: an HTTP `503` whose body carries
+  # `error: "read_only_mode"`.
+  #
+  # Deliberately NOT {ForbiddenError}. Atlas could have refused with a 403, but
+  # a 403 is a statement about the caller's rights, and Cerberus renders
+  # {ForbiddenError} as a permission-denied page. During a migration window that
+  # is a lie — the librarian's rights are fine, the repository is closed.
+  #
+  # Without this the failure mode is worse than an error: a 503 reaches neither
+  # {Middleware::RaiseOnStaleResource} (409-only) nor
+  # {Middleware::RaiseOnResourceError} (403/422-only), and the response body
+  # carries no `"work"` / `"collection"` key, so the binding unwraps `nil` and
+  # returns it. The write silently no-ops and the UI reports success — a
+  # librarian saves metadata, sees no error, and loses the edit.
+  #
+  #   rescue AtlasRb::ReadOnlyModeError => e
+  #     flash.now[:alert] = e.message
+  #     response.headers["Retry-After"] = e.retry_after.to_s if e.retry_after
+  #
+  # Read `GET /maintenance` ({AtlasRb::Maintenance.read}) to render a banner
+  # before a caller trips this; that endpoint stays answerable while the window
+  # is open, precisely so a client can see the flag it is honouring.
+  class ReadOnlyModeError < Error
+    # @return [String, nil] the envelope's `error` discriminator
+    #   (`"read_only_mode"`).
+    attr_reader :code
+
+    # @return [Integer, nil] seconds to wait before retrying, from Atlas's
+    #   `Retry-After` response header.
+    attr_reader :retry_after
+
+    # @param message [String, nil] human-readable refusal description.
+    # @param code [String, nil] the envelope's `error` discriminator.
+    # @param retry_after [Integer, nil] seconds from the `Retry-After` header.
+    def initialize(message=nil, code: nil, retry_after: nil)
+      @code = code
+      @retry_after = retry_after
+      super(message || "Atlas is in maintenance mode; writes are refused")
+    end
+  end
+
   # Raised when the transport has no way to authenticate a relay request:
   # neither `ATLAS_JWT` (BYO-JWT mode) nor a signing key
   # ({AtlasRb.config#assertion_signing_key}, relay-signing mode) is configured.

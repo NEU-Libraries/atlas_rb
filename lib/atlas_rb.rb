@@ -11,6 +11,7 @@ require_relative "atlas_rb/errors"
 require_relative "atlas_rb/configuration"
 require_relative "atlas_rb/middleware/raise_on_stale_resource"
 require_relative "atlas_rb/middleware/raise_on_resource_error"
+require_relative "atlas_rb/middleware/raise_on_read_only_mode"
 require_relative "atlas_rb/faraday_helper"
 require_relative "atlas_rb/mash"
 require_relative "atlas_rb/authentication"
@@ -33,6 +34,7 @@ require_relative "atlas_rb/system/user"
 require_relative "atlas_rb/system/token"
 require_relative "atlas_rb/system/work"
 require_relative "atlas_rb/audit_event"
+require_relative "atlas_rb/maintenance"
 
 # Ruby client for the Atlas API — Northeastern University's institutional
 # digital repository.

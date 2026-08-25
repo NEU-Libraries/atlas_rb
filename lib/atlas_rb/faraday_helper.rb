@@ -109,6 +109,11 @@ module AtlasRb
         instrument(f)
         f.use AtlasRb::Middleware::RaiseOnStaleResource
         f.use AtlasRb::Middleware::RaiseOnResourceError
+        # Path-independent, unlike the pair above: a maintenance window refuses
+        # writes on EVERY path, and a 503 reaches neither of them. Registered on
+        # all three connection builders — a write that slips past it silently
+        # unwraps nil and reports success.
+        f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
         f.response :follow_redirects
         f.adapter Faraday.default_adapter
       end
@@ -153,6 +158,11 @@ module AtlasRb
         # unsupported_digest_algorithm) into a typed FixityMismatchError —
         # the JSON-connection path already carries this; uploads need it too.
         f.use AtlasRb::Middleware::RaiseOnResourceError
+        # Path-independent, unlike the pair above: a maintenance window refuses
+        # writes on EVERY path, and a 503 reaches neither of them. Registered on
+        # all three connection builders — a write that slips past it silently
+        # unwraps nil and reports success.
+        f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
         f.request :multipart
         f.request :url_encoded
       end
@@ -223,6 +233,11 @@ module AtlasRb
         # System::Token, and gives System::Work the same typed errors as #connection.
         f.use AtlasRb::Middleware::RaiseOnStaleResource
         f.use AtlasRb::Middleware::RaiseOnResourceError
+        # Path-independent, unlike the pair above: a maintenance window refuses
+        # writes on EVERY path, and a 503 reaches neither of them. Registered on
+        # all three connection builders — a write that slips past it silently
+        # unwraps nil and reports success.
+        f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
         f.response :follow_redirects
         f.adapter Faraday.default_adapter
       end
