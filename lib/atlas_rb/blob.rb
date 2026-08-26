@@ -290,6 +290,48 @@ module AtlasRb
       ))
     end
 
+    # Read binary version history for many Blobs in one round-trip.
+    #
+    # Wraps Atlas's `POST /files/find_many_versions` — the batch counterpart to
+    # {.versions}, returning one envelope of exactly that shape per Blob. Use it
+    # anywhere a set of Blob noids would otherwise be resolved with a
+    # `versions`-per-noid fan-out (the admin file-manage listing, which reads
+    # every replaceable Blob on a Work): one HTTP call instead of N.
+    #
+    # The ids travel in the request **body**, so the list is not bounded by URL
+    # length. The result is **unordered** and **may be shorter than the input** —
+    # an id that resolves to nothing, or to a resource that is not a Blob, is
+    # dropped silently. Index by `"blob_id"`; do not assume positional
+    # correspondence with `ids`.
+    #
+    # Server admin-gates this exactly like {.versions} (the descriptors expose
+    # the same edit attribution), so `401` / `403` surface as raw Faraday
+    # responses. The grant is class-wide, so nothing is dropped for
+    # authorization — a dropped id is an unresolvable one.
+    #
+    # @param ids [Array<String>] Blob NOIDs.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Array<AtlasRb::Mash>] one {.versions}-shaped envelope per resolved
+    #   Blob (`"blob_id"` plus a reverse-chronological `"versions"` array); empty
+    #   when none resolved.
+    #
+    # @example Render a Work's files with their histories in two calls
+    #   assets  = AtlasRb::Work.assets(work_noid).reject { |a| a[:uri].present? }
+    #   history = AtlasRb::Blob.find_many_versions(assets.map(&:noid))
+    #                          .index_by { |h| h["blob_id"] }
+    #   history[assets.first.noid]["versions"].first["revision"] # => 3
+    def self.find_many_versions(ids, nuid: nil, on_behalf_of: nil)
+      JSON.parse(
+        connection({}, nuid, on_behalf_of: on_behalf_of)
+          .post("#{ROUTE}find_many_versions", JSON.dump(ids: Array(ids)))&.body
+      ).map { |envelope| AtlasRb::Mash.new(envelope) }
+    end
+
     # Stream the bytes of a *prior* version of a Blob through a block.
     #
     # Wraps `GET /files/<id>/versions/<version_id>/content` — the version-pinned
