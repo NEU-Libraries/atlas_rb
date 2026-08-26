@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.14.0
+
+### Added — `Blob.find_many_versions`, the batch version-history read
+
+`AtlasRb::Blob.versions` takes one id, so a caller holding a set of Blob noids
+had to fan out a request per noid. The admin file-manage listing does exactly
+that: it reads every replaceable Blob on a Work, which on a multipage Work is
+one request per page binary, all before the page returns a byte.
+
+`Blob.find_many_versions` wraps Atlas's `POST /files/find_many_versions` and
+answers one `versions`-shaped envelope per Blob in a single call.
+
+```ruby
+assets  = AtlasRb::Work.assets(work_noid).reject { |a| a[:uri].present? }
+history = AtlasRb::Blob.find_many_versions(assets.map(&:noid))
+                       .index_by { |h| h["blob_id"] }
+history[assets.first.noid]["versions"].first["revision"] # => 3
+```
+
+The result is **unordered** and **may be shorter than the input** — an id that
+resolves to nothing, or to a resource that is not a Blob, is dropped silently.
+Index by `"blob_id"`.
+
+Requires Atlas >= 0.6.161. Admin-gated exactly like `.versions`. `.versions`
+itself is unchanged.
+
 ## 1.13.2
 
 ### Documentation — point `children` callers at the batch resolver
