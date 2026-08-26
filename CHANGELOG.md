@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.13.2
+
+### Documentation — point `children` callers at the batch resolver
+
+`Collection.children` and `Community.children` answer noids only, and nothing
+on either method said how to turn those noids into something renderable. The
+obvious reading — `find` per noid — costs a round-trip per child. Both now
+point at {AtlasRb::Resource.find_many} for one-call resolution, and at
+{AtlasRb::Resource.descendant_works} for a whole subtree.
+
+No behaviour change.
+
 ## 1.13.1
 
 ### Fixed — `Maintenance.read` could not name an acting principal

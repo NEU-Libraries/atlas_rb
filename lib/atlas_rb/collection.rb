@@ -190,6 +190,12 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
+    # `children` answers noids only. To render them, resolve the whole list in
+    # one call with {AtlasRb::Resource.find_many}, which returns a
+    # title/thumbnail digest per id — calling `find` per noid costs a
+    # round-trip per child. For a whole subtree flattened to Works, use
+    # {AtlasRb::Resource.descendant_works}.
+    #
     # @return [Array<String>] child noids from `GET /collections/<id>/children`.
     #
     # @example
