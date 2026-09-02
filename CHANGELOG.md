@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.15.0
+
+### Changed — the transport reuses connections instead of opening one per request
+
+`FaradayHelper` built a fresh `Faraday.new` for every call, and Faraday's
+default `net_http` adapter wraps each request in its own `Net::HTTP#start`
+block and closes the socket after it. So every Atlas call paid a TCP handshake,
+and under TLS a full TLS handshake on top of that.
+
+The three builders now hand back an `AtlasRb::Transport::Proxy` over a shared,
+pooled connection — one per shape (`:json`, `:multipart`, `:system`) and base
+URL — using the `net_http_persistent` adapter. The proxy answers `get`, `post`,
+`patch`, `put` and `delete` like a `Faraday::Connection` and forwards a block to
+the request, so no call site changes.
+
+Measured on loopback inside the container, 100 requests per run, self-signed
+ECDSA P-256:
+
+| transport | before | after |
+|---|---|---|
+| plain HTTP | 1.21ms/req | 0.75ms/req |
+| TLS | 3.07ms/req | 0.31ms/req |
+
+Add a round trip each for TCP and TLS over a real network. The largest win is
+a sequential migration script, where the saving is elapsed time and nothing
+hides it; it also removes the `TIME_WAIT` pressure of a socket per request.
+
+Per-request state — the signed assertion, the `Idempotency-Key`, query params —
+now rides on the request rather than being baked into the connection, which is
+what makes a connection safe to share. The pool is process-wide, not
+thread-local, so a fan-out on short-lived threads reuses it.
+
+Two knobs, both optional:
+
+```ruby
+AtlasRb.configure do |config|
+  config.connection_pool_size    = 16  # sockets per Atlas host
+  config.connection_max_requests = nil # cap only if a proxy in front caps it
+end
+```
+
+`AtlasRb::Transport.reset_connections!` closes every pooled socket and drops the
+cached connections. A suite that boots and tears down a real server should call
+it between examples.
+
+### Fixed — the signing key is parsed once, not per request
+
+`assertion_signing_key` is configured as a callable returning a PEM, and
+`OpenSSL::PKey.read` ran on every request: 0.367ms against the 0.072ms ES256
+signature it exists to produce. The parse is now cached and re-run only when the
+PEM changes.
+
 ## 1.14.0
 
 ### Added — `Blob.find_many_versions`, the batch version-history read

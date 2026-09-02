@@ -37,6 +37,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "jwt", "~> 2.7"
   spec.add_dependency "faraday-multipart", "~> 1"
   spec.add_dependency "faraday-follow_redirects", "~> 0.3.0"
+  spec.add_dependency "faraday-net_http_persistent", "~> 2.3"
   spec.add_dependency "hashie", "~> 5.0"
   #spec.add_dependency "require_all", "~> 3"
 

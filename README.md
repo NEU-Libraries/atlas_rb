@@ -156,6 +156,42 @@ atlas_system_token: <token-Atlas-side-recognises-as-:system>
 The system NUID itself is hardcoded as `AtlasRb::System::NUID =
 "000000000"`, matching Atlas's seeded `:system` fixture row.
 
+### Connection reuse
+
+The gem keeps one pooled connection per shape (`:json`, `:multipart`,
+`:system`) and base URL, so a run of Atlas calls reuses its sockets rather than
+opening one per request. Over plain HTTP that saves a TCP handshake per call;
+under TLS it saves the TLS handshake too, which is where the cost actually
+sits — on loopback, 3.07ms per request against 0.31ms. Over a real network add
+a round trip each for TCP and TLS.
+
+Nothing is required to get this. The pool is process-wide rather than
+thread-local, so a host that fans requests out on short-lived threads reuses it
+as well.
+
+Two knobs, both optional:
+
+```ruby
+AtlasRb.configure do |config|
+  # Sockets kept open per Atlas host. Size it to your own concurrency — a host
+  # that fans out four reads per request thread wants four times its thread
+  # count, plus headroom. Defaults to 16.
+  config.connection_pool_size = 16
+
+  # Requests to send on one socket before replacing it. Leave nil against Puma.
+  # Set it when something between you and Puma caps requests per connection,
+  # because the request after the cap fails with ECONNRESET.
+  config.connection_max_requests = nil
+end
+```
+
+A test suite that boots and tears down a real Atlas server should close the
+pool between examples, or a socket from one example stays open into the next:
+
+```ruby
+config.after(:each, :atlas_rb_server) { AtlasRb::Transport.reset_connections! }
+```
+
 ## Resource hierarchy
 
 ```

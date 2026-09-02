@@ -76,5 +76,28 @@ module AtlasRb
     #   Atlas selects the matching public key. Value or callable. Required when
     #   {#assertion_signing_key} is set.
     attr_accessor :assertion_signing_kid
+
+    # Sockets the transport keeps open per Atlas host. Size it to the host's
+    # own concurrency — a consumer that fans out N reads per request thread
+    # wants N times its thread count, plus headroom — rather than to the
+    # `net-http-persistent` default of 256, which is a file-descriptor budget
+    # rather than a considered number. `nil` takes
+    # {AtlasRb::Transport::DEFAULT_POOL_SIZE}.
+    #
+    # Read when a connection is first built, so set it before the first Atlas
+    # call; changing it later has no effect until
+    # {AtlasRb::Transport.reset_connections!}.
+    #
+    # @return [Integer, nil]
+    attr_accessor :connection_pool_size
+
+    # Requests to send on one pooled socket before replacing it. `nil` (the
+    # default) means no cap, which is what a direct connection to Puma wants.
+    # Set it when something between the client and Puma caps requests per
+    # connection, because the request after that cap fails with `ECONNRESET`
+    # rather than reconnecting.
+    #
+    # @return [Integer, nil]
+    attr_accessor :connection_max_requests
   end
 end

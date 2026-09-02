@@ -3,12 +3,16 @@
 require "faraday"
 require "faraday/multipart"
 require "faraday/follow_redirects"
+# Pooling adapter. Required here, not lazily, because the transport pins it on
+# every connection — see AtlasRb::FaradayHelper#persistent_adapter.
+require "faraday/net_http_persistent"
 require "jwt"
 require "openssl"
 require "securerandom"
 require_relative "atlas_rb/version"
 require_relative "atlas_rb/errors"
 require_relative "atlas_rb/configuration"
+require_relative "atlas_rb/transport"
 require_relative "atlas_rb/middleware/raise_on_stale_resource"
 require_relative "atlas_rb/middleware/raise_on_resource_error"
 require_relative "atlas_rb/middleware/raise_on_read_only_mode"

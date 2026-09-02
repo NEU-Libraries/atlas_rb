@@ -51,6 +51,16 @@ module AtlasRb
   # attached the emit degrades to a listener lookup + `yield`, so it is safe to
   # leave in the stack permanently — opt-in lives entirely on the consumer side.
   #
+  # ## Connection reuse
+  #
+  # The three builders do not return a `Faraday::Connection`. They return an
+  # {AtlasRb::Transport::Proxy} over a shared, cached connection, so Atlas calls
+  # reuse sockets instead of paying a TCP — and under TLS a full TLS —
+  # handshake each time. The proxy answers the same verbs and forwards a block,
+  # so call sites are unchanged. See {AtlasRb::Transport} for why the
+  # connection has to be cached for keep-alive to happen at all, and
+  # {AtlasRb::Transport.reset_connections!} for the test-suite teardown hook.
+  #
   # The module is mixed in via `extend`, so its methods become class methods on
   # the host (e.g. `AtlasRb::Work.connection({})`).
   module FaradayHelper
@@ -91,8 +101,10 @@ module AtlasRb
     #   signs when it can but sends no `Authorization` header otherwise, for the
     #   handful of endpoints Atlas serves with auth skipped (currently only
     #   `GET /reset`).
-    # @return [Faraday::Connection] a connection that follows redirects and
-    #   uses Faraday's default adapter.
+    # @return [AtlasRb::Transport::Proxy] a per-request view onto the shared
+    #   JSON connection, which follows redirects and pools its sockets. It
+    #   answers `get` / `post` / `patch` / `put` / `delete` like a
+    #   `Faraday::Connection` and forwards a block to the request.
     #
     # @example Fetching a community
     #   AtlasRb::Community.connection({}).get('/communities/abc123')
@@ -101,22 +113,23 @@ module AtlasRb
                 .merge("Content-Type" => "application/json")
       headers["Idempotency-Key"] = idempotency_key if idempotency_key
 
-      Faraday.new(
-        url: ENV.fetch("ATLAS_URL", nil),
-        params: params,
-        headers: headers
-      ) do |f|
-        instrument(f)
-        f.use AtlasRb::Middleware::RaiseOnStaleResource
-        f.use AtlasRb::Middleware::RaiseOnResourceError
-        # Path-independent, unlike the pair above: a maintenance window refuses
-        # writes on EVERY path, and a 503 reaches neither of them. Registered on
-        # all three connection builders — a write that slips past it silently
-        # unwraps nil and reports success.
-        f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
-        f.response :follow_redirects
-        f.adapter Faraday.default_adapter
+      url  = ENV.fetch("ATLAS_URL", nil)
+      conn = AtlasRb::Transport.connection_for([:json, url]) do
+        Faraday.new(url: url) do |f|
+          instrument(f)
+          f.use AtlasRb::Middleware::RaiseOnStaleResource
+          f.use AtlasRb::Middleware::RaiseOnResourceError
+          # Path-independent, unlike the pair above: a maintenance window refuses
+          # writes on EVERY path, and a 503 reaches neither of them. Registered on
+          # all three connection builders — a write that slips past it silently
+          # unwraps nil and reports success.
+          f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
+          f.response :follow_redirects
+          persistent_adapter(f)
+        end
       end
+
+      AtlasRb::Transport::Proxy.new(conn, headers, params)
     end
 
     # Build a multipart Faraday connection used for binary and XML uploads.
@@ -134,7 +147,8 @@ module AtlasRb
     # @param idempotency_key [String, nil] optional UUID to send in the
     #   `Idempotency-Key` header. See {#connection} for semantics; the
     #   `POST /files` (Blob) create flow uses this transport.
-    # @return [Faraday::Connection] a multipart-aware connection.
+    # @return [AtlasRb::Transport::Proxy] a per-request view onto the shared
+    #   multipart connection.
     #
     # @example Posting a binary blob
     #   payload = {
@@ -148,24 +162,27 @@ module AtlasRb
       headers = auth_headers(nuid, on_behalf_of, account: account)
       headers["Idempotency-Key"] = idempotency_key if idempotency_key
 
-      Faraday.new(
-        url: ENV.fetch("ATLAS_URL", nil),
-        headers: headers
-      ) do |f|
-        instrument(f)
-        f.use AtlasRb::Middleware::RaiseOnStaleResource
-        # Translate Atlas's verify-on-ingest 422 (fixity_mismatch /
-        # unsupported_digest_algorithm) into a typed FixityMismatchError —
-        # the JSON-connection path already carries this; uploads need it too.
-        f.use AtlasRb::Middleware::RaiseOnResourceError
-        # Path-independent, unlike the pair above: a maintenance window refuses
-        # writes on EVERY path, and a 503 reaches neither of them. Registered on
-        # all three connection builders — a write that slips past it silently
-        # unwraps nil and reports success.
-        f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
-        f.request :multipart
-        f.request :url_encoded
+      url  = ENV.fetch("ATLAS_URL", nil)
+      conn = AtlasRb::Transport.connection_for([:multipart, url]) do
+        Faraday.new(url: url) do |f|
+          instrument(f)
+          f.use AtlasRb::Middleware::RaiseOnStaleResource
+          # Translate Atlas's verify-on-ingest 422 (fixity_mismatch /
+          # unsupported_digest_algorithm) into a typed FixityMismatchError —
+          # the JSON-connection path already carries this; uploads need it too.
+          f.use AtlasRb::Middleware::RaiseOnResourceError
+          # Path-independent, unlike the pair above: a maintenance window refuses
+          # writes on EVERY path, and a 503 reaches neither of them. Registered on
+          # all three connection builders — a write that slips past it silently
+          # unwraps nil and reports success.
+          f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
+          f.request :multipart
+          f.request :url_encoded
+          persistent_adapter(f)
+        end
       end
+
+      AtlasRb::Transport::Proxy.new(conn, headers)
     end
 
     # Build a streaming multipart FilePart for `blob_path`, run the request
@@ -176,10 +193,12 @@ module AtlasRb
     # exhausts FDs across a TB migration of millions of files.
     #
     # Streaming/memory: faraday-multipart wraps the part in a streaming
-    # CompositeReadIO and the default net_http adapter sends it via
+    # CompositeReadIO and the pinned net_http_persistent adapter sends it via
     # `request.body_stream` (Content-Length known), so a multi-GB file uploads
-    # without being buffered into a String in memory. (Swapping the host app's
-    # default Faraday adapter to a buffering one would regress this.)
+    # without being buffered into a String in memory. The adapter is pinned by
+    # {#persistent_adapter} rather than read from `Faraday.default_adapter`, so
+    # a host app's own default cannot swap a buffering adapter in underneath
+    # this.
     #
     # @param blob_path [String] path to the binary on disk.
     # @yieldparam part [Faraday::Multipart::FilePart] the streaming part.
@@ -208,7 +227,8 @@ module AtlasRb
     # @param params [Hash] query-string / body params.
     # @param on_behalf_of [String, nil] optional NUID sent as a plain (not
     #   signed) `On-Behalf-Of` header — this path is already backend-only.
-    # @return [Faraday::Connection] a system-authenticated connection.
+    # @return [AtlasRb::Transport::Proxy] a per-request view onto the shared
+    #   system-authenticated connection.
     # @raise [RuntimeError] if the credential is not configured.
     # @raise [NameError] if `Rails` is not loaded (the gem assumes a
     #   Rails host for system-path calls).
@@ -223,27 +243,41 @@ module AtlasRb
       }
       headers["On-Behalf-Of"] = "NUID #{on_behalf_of}" if on_behalf_of
 
-      Faraday.new(
-        url: ENV.fetch("ATLAS_URL", nil),
-        params: params,
-        headers: headers
-      ) do |f|
-        instrument(f)
-        # Narrowly path-scoped (see each class) — a no-op for System::User /
-        # System::Token, and gives System::Work the same typed errors as #connection.
-        f.use AtlasRb::Middleware::RaiseOnStaleResource
-        f.use AtlasRb::Middleware::RaiseOnResourceError
-        # Path-independent, unlike the pair above: a maintenance window refuses
-        # writes on EVERY path, and a 503 reaches neither of them. Registered on
-        # all three connection builders — a write that slips past it silently
-        # unwraps nil and reports success.
-        f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
-        f.response :follow_redirects
-        f.adapter Faraday.default_adapter
+      url  = ENV.fetch("ATLAS_URL", nil)
+      conn = AtlasRb::Transport.connection_for([:system, url]) do
+        Faraday.new(url: url) do |f|
+          instrument(f)
+          # Narrowly path-scoped (see each class) — a no-op for System::User /
+          # System::Token, and gives System::Work the same typed errors as #connection.
+          f.use AtlasRb::Middleware::RaiseOnStaleResource
+          f.use AtlasRb::Middleware::RaiseOnResourceError
+          # Path-independent, unlike the pair above: a maintenance window refuses
+          # writes on EVERY path, and a 503 reaches neither of them. Registered on
+          # all three connection builders — a write that slips past it silently
+          # unwraps nil and reports success.
+          f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
+          f.response :follow_redirects
+          persistent_adapter(f)
+        end
       end
+
+      AtlasRb::Transport::Proxy.new(conn, headers, params)
     end
 
     private
+
+    # Pin the pooling adapter on every builder. Pinned rather than taking
+    # `Faraday.default_adapter`, because the saving depends on which adapter is
+    # in use: the default `net_http` wraps each request in its own
+    # `Net::HTTP#start` block and closes the socket after it, by design, so no
+    # amount of connection caching reuses anything under it. Pinning also means
+    # the streaming upload path no longer depends on what the host app happens
+    # to have set as its Faraday default.
+    def persistent_adapter(builder)
+      builder.adapter :net_http_persistent, pool_size: AtlasRb::Transport.pool_size do |http|
+        AtlasRb::Transport.configure_persistent(http)
+      end
+    end
 
     # Register Faraday's instrumentation middleware as the OUTERMOST handler so
     # each logical call emits exactly one {INSTRUMENTATION_EVENT} — a redirect
@@ -318,12 +352,16 @@ module AtlasRb
 
     # Resolve the configured signing key to an OpenSSL::PKey, or nil if signing
     # is not configured. Accepts a callable (resolved per request), a PEM
-    # string (parsed), or an already-built key.
+    # string, or an already-built key. A PEM is parsed through
+    # {AtlasRb::Transport.parsed_key}, because parsing costs several times the
+    # signature it exists to produce and the key rarely changes.
     def assertion_signing_key
       raw = config_value(AtlasRb.config.assertion_signing_key)
       return nil if raw.nil?
 
-      raw.is_a?(OpenSSL::PKey::PKey) ? raw : OpenSSL::PKey.read(raw)
+      return raw if raw.is_a?(OpenSSL::PKey::PKey)
+
+      AtlasRb::Transport.parsed_key(raw)
     end
 
     def assertion_signing_kid

@@ -65,6 +65,8 @@ RSpec.describe AtlasRb::Middleware::RaiseOnReadOnlyMode do
   # FaradayHelper builds three connections and registers middleware separately
   # in each, so adding this to one is the likely mistake. Missing it on any
   # builder restores the silent no-op for every binding on that transport.
+  # The builders hand back a Transport::Proxy, so the middleware stack is read
+  # off the shared connection the proxy wraps.
   it "is registered on all three connection builders" do
     helper = Class.new { extend AtlasRb::FaradayHelper }
     ENV["ATLAS_JWT"] = "jwt-for-builder-check"
@@ -73,7 +75,7 @@ RSpec.describe AtlasRb::Middleware::RaiseOnReadOnlyMode do
 
     connections = [helper.connection({}), helper.multipart, helper.system_connection]
 
-    connections.each { |conn| expect(conn.builder.handlers).to include(described_class) }
+    connections.each { |conn| expect(conn.connection.builder.handlers).to include(described_class) }
   ensure
     ENV.delete("ATLAS_JWT")
   end
