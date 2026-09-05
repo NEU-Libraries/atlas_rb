@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.15.1
+
+### Fixed — `Resource.permissions` no longer coerces a refused read to `nil`
+
+Atlas gates `GET /resources/:id/permissions` on the caller's read right over
+the resource itself, because the envelope names the Grouper groups and the
+depositor's NUID. A caller who may not read the resource gets a real `403`
+carrying `{ "error", "action", "subject" }`.
+
+The binding parsed that body without consulting the status. The error envelope
+has no `"resource"` key, so `JSON.parse(body)["resource"]` returned the same
+`nil` an unknown id returns — the status, the message and the distinction were
+all gone before the caller saw anything. A host reading this to drive its own
+gate rendered "not found" for a resource the reader was merely not allowed to
+see.
+
+`permissions` now routes through `fetch_resource`, the guarded read path every
+typed `find` already uses:
+
+| Atlas answers | `permissions` |
+|---|---|
+| `200` | the ACL `Mash` |
+| `404` | `nil` — unchanged |
+| `403` | raises `AtlasRb::ResourceError`, `status == 403` |
+
+A host that wants the old "nil for anything unreadable" behaviour rescues
+`AtlasRb::ResourceError` and returns `nil` itself.
+
+The YARD example was also wrong: the envelope carries `type`, `depositor`,
+`proxy_uploader`, `edit_users`, `read`, `edit` and `embargo`, never `id`.
+
 ## 1.15.0
 
 ### Changed — the transport reuses connections instead of opening one per request
