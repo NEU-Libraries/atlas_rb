@@ -181,7 +181,8 @@ module AtlasRb
     #
     # @example
     #   AtlasRb::Resource.permissions("abc123")
-    #   # => { "id" => "abc123", "read" => [...], "write" => [...] }
+    #   # => { "type" => "Work", "depositor" => "001234567",
+    #   #      "read" => [...], "edit" => [...], "edit_users" => [...] }
     def self.permissions(id, nuid: nil, on_behalf_of: nil)
       result = fetch_resource('/resources/' + id + '/permissions', nuid: nuid, on_behalf_of: on_behalf_of)
       return nil if result.nil?
