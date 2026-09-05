@@ -159,6 +159,13 @@ module AtlasRb
 
     # Fetch the access-control entries for a resource.
     #
+    # Routed through {fetch_resource} so a refusal stays a refusal. Atlas gates
+    # this endpoint on the caller's read right over the resource itself and
+    # answers `403` with an `{ "error", "action", "subject" }` envelope, which
+    # has no `"resource"` key — parsing it directly would hand back the same
+    # `nil` an unknown id gives, and a caller cannot tell "may not see it" from
+    # "is not there".
+    #
     # @param id [String] an Atlas resource ID.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
@@ -166,17 +173,20 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Hash] the `"resource"` payload from `GET /resources/<id>/permissions`,
-    #   typically containing read/write/admin grant lists.
+    # @return [AtlasRb::Mash, nil] the `"resource"` payload from
+    #   `GET /resources/<id>/permissions`, typically containing read/write/admin
+    #   grant lists; `nil` when Atlas reports the resource is absent (`404`).
+    # @raise [AtlasRb::ResourceError] on any other non-2xx — notably `403`,
+    #   carrying `status` so the caller can render its own forbidden page.
     #
     # @example
     #   AtlasRb::Resource.permissions("abc123")
     #   # => { "id" => "abc123", "read" => [...], "write" => [...] }
     def self.permissions(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of)
-          .get('/resources/' + id + '/permissions')&.body
-      ))["resource"]
+      result = fetch_resource('/resources/' + id + '/permissions', nuid: nuid, on_behalf_of: on_behalf_of)
+      return nil if result.nil?
+
+      AtlasRb::Mash.new(result)["resource"]
     end
 
     # Fetch the audit-event history for a resource.
