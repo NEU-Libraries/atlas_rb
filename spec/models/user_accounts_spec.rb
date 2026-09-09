@@ -31,7 +31,7 @@ RSpec.describe "account-switching bindings" do
       it "GETs /users/by_nuid/:nuid/accounts and returns the envelope" do
         conn = instance_double(Faraday::Connection)
         allow(conn).to receive(:get).with("/users/by_nuid/001/accounts")
-          .and_return(instance_double(Faraday::Response,
+          .and_return(instance_double(Faraday::Response, status: 200, success?: true,
                                       body: '{"nuid":"001","accounts":[{"email":"a@x.edu","preferred":true}]}'))
         allow(described_class).to receive(:connection).with({}, "001").and_return(conn)
 
@@ -65,7 +65,8 @@ RSpec.describe "account-switching bindings" do
       it "threads the email through as the signed account selector" do
         conn = instance_double(Faraday::Connection)
         allow(conn).to receive(:get).with("/user")
-          .and_return(instance_double(Faraday::Response, body: '{"id":1,"email":"b@x.edu","groups":["g"]}'))
+          .and_return(instance_double(Faraday::Response, status: 200, success?: true,
+                                      body: '{"id":1,"email":"b@x.edu","groups":["g"]}'))
         expect(described_class).to receive(:connection).with({}, "001", account: "b@x.edu").and_return(conn)
 
         result = described_class.login("001", email: "b@x.edu")

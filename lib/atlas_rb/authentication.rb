@@ -25,16 +25,19 @@ module AtlasRb
     # @param nuid [String] the user's Northeastern University ID.
     # @param email [String, nil] optional account email to act as (the `acct`
     #   selector); nil resolves the preferred account.
-    # @return [Hash] the user record returned by `GET /user`, including at
-    #   minimum `"id"`, `"name"`, and `"groups"`.
-    # @raise [JSON::ParserError] if the response body is not valid JSON
-    #   (typically caused by an auth failure returning HTML).
+    # @return [AtlasRb::Mash, nil] the user record returned by `GET /user`,
+    #   including at minimum `"id"`, `"name"`, and `"groups"`.
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     #
     # @example
     #   AtlasRb::Authentication.login("001234567")
     #   # => { "id" => 42, "name" => "Jane Doe", "groups" => [...] }
     def self.login(nuid, email: nil)
-      AtlasRb::Mash.new(JSON.parse(connection({}, nuid, account: email).get('/user')&.body))
+      read_body(connection({}, nuid, account: email).get('/user')) { |body| AtlasRb::Mash.new(body) }
     end
 
     # Fetch only the group memberships for an NUID.
@@ -43,8 +46,12 @@ module AtlasRb
     # when authorization checks only need group names.
     #
     # @param nuid [String] the user's Northeastern University ID.
-    # @return [Array<Hash>] the `"groups"` array from the user record.
-    # @raise [JSON::ParserError] if the response body is not valid JSON.
+    # @return [Array<Hash>, nil] the `"groups"` array from the user record.
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     #
     # @example
     #   AtlasRb::Authentication.groups("001234567")
@@ -54,7 +61,7 @@ module AtlasRb
       # token = user_details[:token] ...
       # TODO - need to update atlas login to give back name, id, and token upon logging in
       # result = JSON.parse(connection({ token: token }).post('/users/2/groups')&.body)["user"]["groups"]
-      AtlasRb::Mash.new(JSON.parse(connection({}, nuid).get('/user')&.body))["groups"]
+      read_body(connection({}, nuid).get('/user')) { |body| AtlasRb::Mash.new(body)["groups"] }
     end
   end
 end

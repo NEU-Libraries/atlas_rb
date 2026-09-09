@@ -106,7 +106,7 @@ RSpec.describe AtlasRb::Blob do
       it "GETs /files/:id/versions and returns the envelope unwrapped" do
         conn = stub_connection
         expect(conn).to receive(:get).with("/files/b-1/versions").and_return(
-          instance_double(Faraday::Response,
+          instance_double(Faraday::Response, status: 200, success?: true,
                           body: '{"blob_id":"b-1","versions":[{"version_id":"v5","digest":"sha512:ff"}]}')
         )
 
@@ -139,12 +139,16 @@ RSpec.describe AtlasRb::Blob do
         expect(conn).to receive(:get).with("/files/b-1/versions/v1/content") do |&blk|
           blk.call(req)
           options.on_data.call("chunk-bytes", 11, env)
+          instance_double(Faraday::Response, status: 200)
         end
 
         chunks = []
-        headers = described_class.version_content("b-1", "v1") { |c| chunks << c }
+        result = described_class.version_content("b-1", "v1") { |c| chunks << c }
         expect(chunks).to eq(["chunk-bytes"])
-        expect(headers["content-type"]).to eq("application/pdf")
+        # The status rides back with the headers so a caller streaming these
+        # chunks onward can refuse to pass an error body off as file bytes.
+        expect(result[:status]).to eq(200)
+        expect(result[:headers]["content-type"]).to eq("application/pdf")
       end
     end
   end

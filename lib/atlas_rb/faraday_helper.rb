@@ -51,6 +51,13 @@ module AtlasRb
   # attached the emit degrades to a listener lookup + `yield`, so it is safe to
   # leave in the stack permanently — opt-in lives entirely on the consumer side.
   #
+  # ## Read errors
+  #
+  # {Middleware::RaiseOnReadError} raises on a non-2xx read, so no binding can
+  # return an error body as if it were data. Registered on the JSON and system
+  # connections; the multipart connection carries only writes, which have their
+  # own guard in {AtlasRb::Resource.write_resource}.
+  #
   # ## Connection reuse
   #
   # The three builders do not return a `Faraday::Connection`. They return an
@@ -117,13 +124,7 @@ module AtlasRb
       conn = AtlasRb::Transport.connection_for([:json, url]) do
         Faraday.new(url: url) do |f|
           instrument(f)
-          f.use AtlasRb::Middleware::RaiseOnStaleResource
-          f.use AtlasRb::Middleware::RaiseOnResourceError
-          # Path-independent, unlike the pair above: a maintenance window refuses
-          # writes on EVERY path, and a 503 reaches neither of them. Registered on
-          # all three connection builders — a write that slips past it silently
-          # unwraps nil and reports success.
-          f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
+          error_middleware(f, reads: true)
           f.response :follow_redirects
           persistent_adapter(f)
         end
@@ -166,16 +167,7 @@ module AtlasRb
       conn = AtlasRb::Transport.connection_for([:multipart, url]) do
         Faraday.new(url: url) do |f|
           instrument(f)
-          f.use AtlasRb::Middleware::RaiseOnStaleResource
-          # Translate Atlas's verify-on-ingest 422 (fixity_mismatch /
-          # unsupported_digest_algorithm) into a typed FixityMismatchError —
-          # the JSON-connection path already carries this; uploads need it too.
-          f.use AtlasRb::Middleware::RaiseOnResourceError
-          # Path-independent, unlike the pair above: a maintenance window refuses
-          # writes on EVERY path, and a 503 reaches neither of them. Registered on
-          # all three connection builders — a write that slips past it silently
-          # unwraps nil and reports success.
-          f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
+          error_middleware(f, reads: false)
           f.request :multipart
           f.request :url_encoded
           persistent_adapter(f)
@@ -247,15 +239,7 @@ module AtlasRb
       conn = AtlasRb::Transport.connection_for([:system, url]) do
         Faraday.new(url: url) do |f|
           instrument(f)
-          # Narrowly path-scoped (see each class) — a no-op for System::User /
-          # System::Token, and gives System::Work the same typed errors as #connection.
-          f.use AtlasRb::Middleware::RaiseOnStaleResource
-          f.use AtlasRb::Middleware::RaiseOnResourceError
-          # Path-independent, unlike the pair above: a maintenance window refuses
-          # writes on EVERY path, and a 503 reaches neither of them. Registered on
-          # all three connection builders — a write that slips past it silently
-          # unwraps nil and reports success.
-          f.use AtlasRb::Middleware::RaiseOnReadOnlyMode
+          error_middleware(f, reads: true)
           f.response :follow_redirects
           persistent_adapter(f)
         end
@@ -264,7 +248,76 @@ module AtlasRb
       AtlasRb::Transport::Proxy.new(conn, headers, params)
     end
 
+    # Status-guard a completed read, then parse its body.
+    #
+    # Every read binding funnels its response through this (or {#read_raw}) so
+    # the status is consulted before the body is touched. The wire-level
+    # equivalent lives in {Middleware::RaiseOnReadError}; this is the same
+    # contract expressed where a binding can see it, which is what keeps the
+    # guarantee true for a caller who has stubbed the transport.
+    #
+    # Mapping:
+    #
+    # - `404`             → `nil`. "Absent" is a legitimate answer to a read,
+    #   and returning it as `nil` rather than an empty collection lets a caller
+    #   tell "no such container" from "an empty container" — two answers that
+    #   mean different things to a UI. It also covers the case where `ATLAS_URL`
+    #   points at something that is not Atlas: a foreign `404` with an HTML
+    #   body is a clean `nil` instead of a `JSON::ParserError` raised half a
+    #   stack away from the misconfiguration that caused it.
+    # - `410`             → the parsed body. A tombstone arrives as `410 Gone`
+    #   *with* its full body, so it is a returnable answer.
+    # - any other non-2xx → {AtlasRb::ResourceError}, naming the verb, path and
+    #   status.
+    # - `2xx`             → the parsed body.
+    #
+    # @param resp [Faraday::Response] the completed read response.
+    # @yieldparam body [Hash, Array] the parsed body, when there is one.
+    # @return [Object, nil] the block's value (or the parsed body with no
+    #   block), or `nil` on a `404`.
+    # @raise [AtlasRb::ResourceError] on a non-2xx other than `404` / `410`.
+    # @api private
+    def read_body(resp)
+      return nil unless guard_read(resp)
+
+      parsed = JSON.parse(resp.body)
+      block_given? ? yield(parsed) : parsed
+    end
+
+    # Status-guard a completed read and hand back its body unparsed.
+    #
+    # The `mods` bindings' shape: Atlas renders MODS to XML/JSON/HTML
+    # server-side and the body is passed through by design. That design is
+    # correct for the intended payload and wrong for an error body — a
+    # consumer that marks the result HTML-safe would write Atlas's failure
+    # into its own page — so the status still has to be consulted first.
+    # Mapping is as {#read_body}, minus the parse.
+    #
+    # @param resp [Faraday::Response] the completed read response.
+    # @return [String, nil] the raw body, or `nil` on a `404`.
+    # @raise [AtlasRb::ResourceError] on a non-2xx other than `404` / `410`.
+    # @api private
+    def read_raw(resp)
+      return nil unless guard_read(resp)
+
+      resp.body
+    end
+
     private
+
+    # True when `resp` carries a body worth reading, false on a `404`.
+    #
+    # @raise [AtlasRb::ResourceError] on a non-2xx other than `404` / `410`.
+    def guard_read(resp)
+      return false if resp.status == 404
+      return true if resp.success? || resp.status == 410
+
+      env = resp.env
+      raise AtlasRb::ResourceError.new(
+        "#{env&.method.to_s.upcase} #{env&.url&.path} → #{resp.status}: #{resp.body}",
+        response: resp
+      )
+    end
 
     # Pin the pooling adapter on every builder. Pinned rather than taking
     # `Faraday.default_adapter`, because the saving depends on which adapter is
@@ -277,6 +330,37 @@ module AtlasRb
       builder.adapter :net_http_persistent, pool_size: AtlasRb::Transport.pool_size do |http|
         AtlasRb::Transport.configure_persistent(http)
       end
+    end
+
+    # Register the error-translating middleware, in the one order that works.
+    #
+    # Faraday runs `on_complete` innermost-first, so the handler registered
+    # earliest here runs *last*. That is why the generic read guard goes on
+    # first: a maintenance `503` has to stay a
+    # {AtlasRb::ReadOnlyModeError} and a refused re-parent a
+    # {AtlasRb::ForbiddenError}, so the typed translators must get their look
+    # at the status before the catch-all does. Reorder these and the typed
+    # errors quietly become generic ones.
+    #
+    # What each one is for:
+    #
+    # - {Middleware::RaiseOnReadError} — the catch-all for a non-2xx read, so
+    #   no binding can hand an error body back as data. `reads: false` for the
+    #   multipart shape, which carries only writes.
+    # - {Middleware::RaiseOnStaleResource} and
+    #   {Middleware::RaiseOnResourceError} — narrowly path-scoped (see each
+    #   class). Mostly no-ops on the system shape; on the multipart shape the
+    #   second is what turns Atlas's verify-on-ingest `422` into a
+    #   {AtlasRb::FixityMismatchError}.
+    # - {Middleware::RaiseOnReadOnlyMode} — path-independent, unlike the pair
+    #   above: a maintenance window refuses writes on every path and a `503`
+    #   reaches neither of them. On all three shapes, because a write that
+    #   slips past it silently unwraps nil and reports success.
+    def error_middleware(builder, reads:)
+      builder.use AtlasRb::Middleware::RaiseOnReadError if reads
+      builder.use AtlasRb::Middleware::RaiseOnStaleResource
+      builder.use AtlasRb::Middleware::RaiseOnResourceError
+      builder.use AtlasRb::Middleware::RaiseOnReadOnlyMode
     end
 
     # Register Faraday's instrumentation middleware as the OUTERMOST handler so

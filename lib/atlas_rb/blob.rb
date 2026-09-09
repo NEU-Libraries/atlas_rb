@@ -57,16 +57,21 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [AtlasRb::Mash] `{ "file_set" => "<noid>", "work" => "<noid>" }`
+    # @return [AtlasRb::Mash, nil] `{ "file_set" => "<noid>", "work" => "<noid>" }`
     #   (either value `nil` when unresolvable).
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example
     #   AtlasRb::Blob.ancestry("b-321")
     #   # => { "file_set" => "fs-654", "work" => "w-789" }
     def self.ancestry(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/ancestry")&.body
-      ))
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/ancestry")) do |body|
+        AtlasRb::Mash.new(body)
+      end
     end
 
     # Convenience over {.ancestry}: the containing Work's noid for a content
@@ -277,17 +282,22 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [AtlasRb::Mash] the parsed envelope, with `"blob_id"` and a
+    # @return [AtlasRb::Mash, nil] the parsed envelope, with `"blob_id"` and a
     #   `"versions"` array (reverse chronological).
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example
     #   history = AtlasRb::Blob.versions("b-321")
     #   history["versions"].first["version_id"] # => "v5"
     #   history["versions"].first["digest"]      # => "sha512:9f86d0…"
     def self.versions(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/versions")&.body
-      ))
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/versions")) do |body|
+        AtlasRb::Mash.new(body)
+      end
     end
 
     # Read binary version history for many Blobs in one round-trip.
@@ -316,20 +326,25 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Array<AtlasRb::Mash>] one {.versions}-shaped envelope per resolved
+    # @return [Array<AtlasRb::Mash>, nil] one {.versions}-shaped envelope per resolved
     #   Blob (`"blob_id"` plus a reverse-chronological `"versions"` array); empty
     #   when none resolved.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Render a Work's files with their histories in two calls
     #   assets  = AtlasRb::Work.assets(work_noid).reject { |a| a[:uri].present? }
     #   history = AtlasRb::Blob.find_many_versions(assets.map(&:noid))
     #                          .index_by { |h| h["blob_id"] }
     #   history[assets.first.noid]["versions"].first["revision"] # => 3
     def self.find_many_versions(ids, nuid: nil, on_behalf_of: nil)
-      JSON.parse(
+      read_body(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .post("#{ROUTE}find_many_versions", JSON.dump(ids: Array(ids)))&.body
-      ).map { |envelope| AtlasRb::Mash.new(envelope) }
+          .post("#{ROUTE}find_many_versions", JSON.dump(ids: Array(ids)))
+      ) { |body| body.map { |envelope| AtlasRb::Mash.new(envelope) } }
     end
 
     # Stream the bytes of a *prior* version of a Blob through a block.
@@ -353,7 +368,13 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @yieldparam chunk [String] the next chunk of binary data.
-    # @return [Hash] the response headers from the version-content request.
+    # @return [Hash] `{ status:, headers: }` — the HTTP status and response
+    #   headers. The status is handed back rather than raised on, because
+    #   chunks reach the caller as they arrive: by the time the status could
+    #   be checked, an error body would already have been streamed. A caller
+    #   writing the chunks to an HTTP response (or a file) must consult it, or
+    #   an Atlas error page becomes the bytes of the downloaded file. Matches
+    #   {.content}'s contract.
     #
     # @example Download a superseded version to disk
     #   File.open("/tmp/old.pdf", "wb") do |f|
@@ -361,13 +382,14 @@ module AtlasRb
     #   end
     def self.version_content(id, version_id, nuid: nil, on_behalf_of: nil, &chunk_handler)
       headers = {}
-      connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/versions/#{version_id}/content") do |req|
+      response = connection({}, nuid, on_behalf_of: on_behalf_of)
+                 .get("#{ROUTE}#{id}/versions/#{version_id}/content") do |req|
         req.options.on_data = proc do |chunk, _bytes_received, env|
           headers = env.response_headers if headers.empty? && env
           chunk_handler.call(chunk)
         end
       end
-      headers
+      { status: response.status, headers: headers }
     end
 
     # Roll a Blob back to a prior version.

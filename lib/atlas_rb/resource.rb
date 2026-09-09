@@ -74,18 +74,23 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Array<AtlasRb::Mash>] one digest Mash per resolved resource
+    # @return [Array<AtlasRb::Mash>, nil] one digest Mash per resolved resource
     #   (dot- or string-keyed access); empty when nothing resolved.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Resolve a set of collection titles in one call
     #   nodes  = AtlasRb::Resource.find_many(["col-456", "col-457", "missing"])
     #   by_noid = nodes.index_by { |n| n["noid"] }
     #   by_noid["col-456"].title   # => "Some Collection"
     def self.find_many(ids, nuid: nil, on_behalf_of: nil)
-      JSON.parse(
+      read_body(
         connection({}, nuid, on_behalf_of: on_behalf_of)
-          .post('/resources/find_many', JSON.dump(ids: Array(ids)))&.body
-      ).map { |node| AtlasRb::Mash.new(node) }
+          .post('/resources/find_many', JSON.dump(ids: Array(ids)))
+      ) { |body| body.map { |node| AtlasRb::Mash.new(node) } }
     end
 
     # Every Work beneath a resource, at any depth — the structural counterpart
@@ -118,6 +123,9 @@ module AtlasRb
     #   array and a `"pagination"` block; `nil` when the id resolves to nothing
     #   (`404`).
     #
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Page a Collection's whole subtree of Works
     #   result = AtlasRb::Resource.descendant_works("col-456", per_page: 100)
     #   result["works"].map { |w| w["noid"] }
@@ -127,11 +135,8 @@ module AtlasRb
       params[:page]           = page           if page
       params[:per_page]       = per_page       if per_page
       params[:include_linked] = include_linked unless include_linked.nil?
-      resp = connection(params, nuid, on_behalf_of: on_behalf_of)
-             .get('/resources/' + id + '/descendant_works')
-      return nil if resp.status == 404
-
-      AtlasRb::Mash.new(JSON.parse(resp.body))
+      read_body(connection(params, nuid, on_behalf_of: on_behalf_of)
+                  .get('/resources/' + id + '/descendant_works')) { |body| AtlasRb::Mash.new(body) }
     end
 
     # Validate a MODS XML document against Atlas's schema *without* persisting it.
@@ -212,19 +217,22 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [AtlasRb::Mash] the parsed envelope from
+    # @return [AtlasRb::Mash, nil] the parsed envelope from
     #   `GET /resources/<id>/history`, with `"resource_id"` and an `"events"`
     #   array (reverse chronological; possibly empty).
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example
     #   result = AtlasRb::Resource.history("abc12345")
     #   result["resource_id"]            # => "abc12345"
     #   result["events"].first["action"] # => "create"
     def self.history(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of)
-          .get('/resources/' + id + '/history')&.body
-      ))
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of)
+                  .get('/resources/' + id + '/history')) { |body| AtlasRb::Mash.new(body) }
     end
 
     # Fetch the CURRENT MODS of any Modsable resource by NOID — the polymorphic
@@ -249,14 +257,17 @@ module AtlasRb
     #   server returns `404` (empty body) for an unknown id, a non-Modsable
     #   resource, or one with no MODS.
     #
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Bulk-export a Set's members' MODS without klass dispatch
     #   AtlasRb::Collection.children(set_id).each do |noid|
     #     xml = AtlasRb::Resource.mods(noid, "xml")
     #   end
     def self.mods(id, kind = nil, nuid: nil, on_behalf_of: nil)
-      connection({}, nuid, on_behalf_of: on_behalf_of).get(
-        '/resources/' + id + '/mods' + (kind.to_s.empty? ? '' : ".#{kind}")
-      )&.body
+      read_raw(connection({}, nuid, on_behalf_of: on_behalf_of).get(
+                 '/resources/' + id + '/mods' + (kind.to_s.empty? ? '' : ".#{kind}")
+               ))
     end
 
     # List the retained MODS versions for a resource.
@@ -285,18 +296,21 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [AtlasRb::Mash] the parsed envelope, with `"resource_id"` and a
+    # @return [AtlasRb::Mash, nil] the parsed envelope, with `"resource_id"` and a
     #   `"versions"` array (reverse chronological; possibly empty).
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example
     #   history = AtlasRb::Resource.mods_versions("w-789")
     #   history["versions"].first["version_id"] # => "v5"
     #   history["versions"].first["actor_nuid"]  # => "000000002"
     def self.mods_versions(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of)
-          .get('/resources/' + id + '/mods/versions')&.body
-      ))
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of)
+                  .get('/resources/' + id + '/mods/versions')) { |body| AtlasRb::Mash.new(body) }
     end
 
     # Fetch the MODS document as of a specific version.
@@ -323,39 +337,36 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [String] the raw MODS XML body for that version.
+    # @return [String, nil] the raw MODS XML body for that version.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Diff two MODS versions
     #   old_xml = AtlasRb::Resource.mods_version("w-789", "v3")
     #   new_xml = AtlasRb::Resource.mods_version("w-789", "v5")
     def self.mods_version(id, version_id, kind: nil, nuid: nil, on_behalf_of: nil)
-      connection({}, nuid, on_behalf_of: on_behalf_of).get(
-        '/resources/' + id + '/mods/versions/' + version_id +
-          (kind.to_s.empty? ? '' : ".#{kind}")
-      )&.body
+      read_raw(connection({}, nuid, on_behalf_of: on_behalf_of).get(
+                 '/resources/' + id + '/mods/versions/' + version_id +
+                   (kind.to_s.empty? ? '' : ".#{kind}")
+               ))
     end
 
     # Shared read path behind every typed `find`: perform a single-resource
-    # `GET` and return the parsed JSON envelope, or `nil` when Atlas reports
-    # the resource is absent (`404`).
+    # `GET` and hand the response to {AtlasRb::FaradayHelper#read_body}, which
+    # owns the status mapping (`404` → `nil`, `410` → the tombstone body, any
+    # other non-2xx → {AtlasRb::ResourceError}).
     #
     # Its job is to stop `find` from silently coercing an error *envelope*
     # into `nil`. Atlas renders auth/validation failures as a JSON body
     # (`{ "error" => ... }`, status 400/401/403/422); a naive
     # `JSON.parse(body)["work"]` returns `nil` for the missing `"work"` key —
     # losing the status and message, and surfacing as a baffling
-    # `NoMethodError` far from the cause. Mapping:
-    #
-    # - `404`             → `nil` (clean "not found"; also avoids the
-    #   `JSON::ParserError` the old code raised on the empty `head :not_found`
-    #   body).
-    # - `410`             → the parsed JSON Hash. A tombstoned resource is
-    #   returned as `410 Gone` WITH its full body (carrying tombstoned /
-    #   tombstoned_at / tombstoned_by), so it is a returnable tombstone, not an
-    #   error envelope — `find` yields the tombstone rather than raising.
-    # - any other non-2xx → {AtlasRb::ResourceError} carrying Atlas's status +
-    #   body, so the failure is attributable at the boundary.
-    # - `2xx`             → the parsed JSON Hash, for the caller to unwrap.
+    # `NoMethodError` far from the cause. It stays as a named method rather
+    # than being inlined into each `find` so the nine typed readers keep
+    # reading as one-line wraps.
     #
     # @param path [String] the resource path to GET (e.g. `"/works/abc123"`).
     # @param nuid [String, nil] optional acting user's NUID (see {find}).
@@ -365,18 +376,7 @@ module AtlasRb
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`.
     # @api private
     def self.fetch_resource(path, nuid: nil, on_behalf_of: nil)
-      resp = connection({}, nuid, on_behalf_of: on_behalf_of).get(path)
-      return nil if resp.status == 404
-
-      # A tombstoned resource comes back as 410 Gone WITH its full body — a
-      # "gone, but here it is" tombstone, not an error envelope — so parse it
-      # like a 2xx and let callers read the tombstone. Only genuine error
-      # statuses raise.
-      unless resp.success? || resp.status == 410
-        raise AtlasRb::ResourceError.new("GET #{path} → #{resp.status}: #{resp.body}", response: resp)
-      end
-
-      JSON.parse(resp.body)
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(path))
     end
     private_class_method :fetch_resource
 

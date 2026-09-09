@@ -38,16 +38,21 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
-    # @return [Array<AtlasRb::Mash>] matching directory entries, each
+    # @return [Array<AtlasRb::Mash>, nil] matching directory entries, each
     #   carrying `nuid` and `name`.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Recipient typeahead
     #   AtlasRb::User.search("jan", nuid: "000000002")
     #   # => [{ "nuid" => "001234567", "name" => "Doe, Jane" }, ...]
     def self.search(query, nuid: nil)
-      JSON.parse(
-        connection({ q: query }, nuid).get(ROUTE)&.body
-      ).map { |entry| AtlasRb::Mash.new(entry) }
+      read_body(connection({ q: query }, nuid).get(ROUTE)) do |body|
+        body.map { |entry| AtlasRb::Mash.new(entry) }
+      end
     end
 
     # Resolve a single NUID to a directory entry.
@@ -61,14 +66,16 @@ module AtlasRb
     #   Atlas reports the NUID as absent (unknown, or held by an excluded
     #   role — the two are indistinguishable on the wire by design).
     #
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Sender-name display
     #   AtlasRb::User.find_by_nuid("001234567")
     #   # => { "nuid" => "001234567", "name" => "Doe, Jane" }
     def self.find_by_nuid(target_nuid, nuid: nil)
-      response = connection({}, nuid).get("#{ROUTE}/by_nuid/#{target_nuid}")
-      return nil if response.status == 404
-
-      AtlasRb::Mash.new(JSON.parse(response.body))
+      read_body(connection({}, nuid).get("#{ROUTE}/by_nuid/#{target_nuid}")) do |body|
+        AtlasRb::Mash.new(body)
+      end
     end
 
     # Batch-resolve a set of NUIDs to directory entries in one call.
@@ -81,16 +88,21 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
-    # @return [Array<AtlasRb::Mash>] resolved entries, each carrying `nuid`
+    # @return [Array<AtlasRb::Mash>, nil] resolved entries, each carrying `nuid`
     #   and `name`, ordered by name.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Resolve an inbox page of senders in one round-trip
     #   senders = AtlasRb::User.resolve(["001234567", "007654321"])
     #   by_nuid = senders.index_by { |entry| entry["nuid"] }
     def self.resolve(nuids, nuid: nil)
-      JSON.parse(
-        connection({ nuids: Array(nuids).join(",") }, nuid).get(ROUTE)&.body
-      ).map { |entry| AtlasRb::Mash.new(entry) }
+      read_body(connection({ nuids: Array(nuids).join(",") }, nuid).get(ROUTE)) do |body|
+        body.map { |entry| AtlasRb::Mash.new(entry) }
+      end
     end
 
     # List the accounts sharing a NUID — a person's staff/student logins.
@@ -105,16 +117,21 @@ module AtlasRb
     #   *subject*, distinct from the acting `nuid:` kwarg.
     # @param nuid [String, nil] optional acting user's NUID (signed into the
     #   assertion `sub`); on the BYO-JWT path identity lives in the token.
-    # @return [AtlasRb::Mash] the envelope: `nuid` plus an `accounts` array,
+    # @return [AtlasRb::Mash, nil] the envelope: `nuid` plus an `accounts` array,
     #   each entry carrying `email`, `name`, `affiliation`, `role`, `groups`,
     #   and `preferred`.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Login-time multi-account detection
     #   AtlasRb::User.accounts("001234567", nuid: "001234567")["accounts"].size # => 2
     def self.accounts(target_nuid, nuid: nil)
-      AtlasRb::Mash.new(JSON.parse(
-        connection({}, nuid).get("#{ROUTE}/by_nuid/#{target_nuid}/accounts")&.body
-      ))
+      read_body(connection({}, nuid).get("#{ROUTE}/by_nuid/#{target_nuid}/accounts")) do |body|
+        AtlasRb::Mash.new(body)
+      end
     end
 
     # Set the preferred (default) account for a NUID — the account chosen when

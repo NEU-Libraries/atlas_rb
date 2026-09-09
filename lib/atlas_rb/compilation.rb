@@ -88,9 +88,14 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [AtlasRb::Mash] `{ "compilations" => [...], "pagination" => {...} }`.
+    # @return [AtlasRb::Mash, nil] `{ "compilations" => [...], "pagination" => {...} }`.
     #   Each entry in `"compilations"` is a flat Compilation, carrying the
     #   same keys {.find} returns.
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @raise [AtlasRb::ForbiddenError] on a cross-owner listing without admin.
     #
     # @example My Sets
@@ -114,9 +119,9 @@ module AtlasRb
       params[:q]        = q        if q
       params[:page]     = page     if page
       params[:per_page] = per_page if per_page
-      AtlasRb::Mash.new(JSON.parse(
-        connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE)&.body
-      ))
+      read_body(connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE)) do |body|
+        AtlasRb::Mash.new(body)
+      end
     end
 
     # Create a Compilation owned by the acting user.
@@ -414,10 +419,15 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [AtlasRb::Mash] `{ "contents" => [...], "pagination" =>
+    # @return [AtlasRb::Mash, nil] `{ "contents" => [...], "pagination" =>
     #   { "total", "page", "per_page", "pages" } }`. Each entry is a
     #   lightweight digest in the {Resource.find_many} vocabulary —
     #   `id` / `noid` / `klass` / `title` / `thumbnail`.
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @raise [AtlasRb::ForbiddenError] if the caller may not read this Set.
     #
     # @example
@@ -428,9 +438,9 @@ module AtlasRb
       params = {}
       params[:page]     = page     if page
       params[:per_page] = per_page if per_page
-      AtlasRb::Mash.new(JSON.parse(
-        connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/contents')&.body
-      ))
+      read_body(connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/contents')) do |body|
+        AtlasRb::Mash.new(body)
+      end
     end
   end
 end

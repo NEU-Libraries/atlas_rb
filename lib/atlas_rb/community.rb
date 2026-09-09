@@ -175,15 +175,18 @@ module AtlasRb
     # round-trip per child. For a whole subtree flattened to Works, use
     # {AtlasRb::Resource.descendant_works}.
     #
-    # @return [Array<String>] child noids from `GET /communities/<id>/children`.
+    # @return [Array<String>, nil] child noids from `GET /communities/<id>/children`.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example
     #   AtlasRb::Community.children("c-123")
     #   # => ["fn106x926", "kw52j804p"]
     def self.children(id, nuid: nil, on_behalf_of: nil)
-      JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/children')&.body
-      )
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/children'))
     end
 
     # Replace a Community's metadata by uploading a MODS XML document.
@@ -293,16 +296,21 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [String] the raw response body (JSON, HTML, or XML serialized
+    # @return [String, nil] the raw response body (JSON, HTML, or XML serialized
     #   as a string).
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example HTML rendering for display
     #   AtlasRb::Community.mods("c-123", "html")
     def self.mods(id, kind = nil, nuid: nil, on_behalf_of: nil)
       # json default, html, xml
-      connection({}, nuid, on_behalf_of: on_behalf_of).get(
-        ROUTE + id + '/mods' + (kind.to_s.empty? ? '' : ".#{kind}")
-        )&.body
+      read_raw(connection({}, nuid, on_behalf_of: on_behalf_of).get(
+                 ROUTE + id + '/mods' + (kind.to_s.empty? ? '' : ".#{kind}")
+               ))
     end
   end
 end

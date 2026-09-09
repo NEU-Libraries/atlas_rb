@@ -39,12 +39,18 @@ module AtlasRb
     #   authenticated read floor, so it needs a principal like any other read.
     # @param on_behalf_of [String, nil] optional NUID carried as a signed `obo`
     #   claim.
-    # @return [AtlasRb::Mash] `read_only` (Boolean), `source`
+    # @return [AtlasRb::Mash, nil] `read_only` (Boolean), `source`
     #   (`"operator"` / `"deploy"` / nil), `since` (ISO-8601 or nil), `message`
     #   (String or nil), and `retry_after` (Integer seconds).
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     def self.read(nuid: nil, on_behalf_of: nil)
-      response = connection({}, nuid, on_behalf_of: on_behalf_of).get("/maintenance")
-      AtlasRb::Mash.new(JSON.parse(response.body))
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get("/maintenance")) do |body|
+        AtlasRb::Mash.new(body)
+      end
     end
 
     # Open or close the window (`PUT /maintenance`). System-gated in Atlas.

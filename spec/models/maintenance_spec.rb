@@ -10,7 +10,7 @@ RSpec.describe AtlasRb::Maintenance do
     it "GETs /maintenance over the ordinary connection" do
       conn = instance_double(Faraday::Connection)
       allow(conn).to receive(:get).with("/maintenance")
-        .and_return(instance_double(Faraday::Response,
+        .and_return(instance_double(Faraday::Response, status: 200, success?: true,
                                     body: '{"read_only":true,"source":"deploy",' \
                                           '"since":"2026-08-25T09:14:00Z",' \
                                           '"message":"Scheduled maintenance until 10:00",' \

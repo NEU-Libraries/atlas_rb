@@ -56,13 +56,18 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [AtlasRb::Mash] `{ "works" => [...], "pagination" => {...} }`.
+    # @return [AtlasRb::Mash, nil] `{ "works" => [...], "pagination" => {...} }`.
     #   Each entry in `"works"` is a flat Work summary (`id`, `title`,
     #   `description`, `in_progress`, `incomplete`, `incomplete_reason`,
     #   `handle`). `handle` is carried on the summary, not just the detail
     #   read, so "which Works never minted?" is answerable from one page
     #   rather than a fetch per row.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Find stuck deposits
     #   AtlasRb::Work.list(in_progress: true)
     #
@@ -77,9 +82,9 @@ module AtlasRb
       params[:incomplete]  = incomplete  unless incomplete.nil?
       params[:page]        = page        if page
       params[:per_page]    = per_page    if per_page
-      AtlasRb::Mash.new(JSON.parse(
-        connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE)&.body
-      ))
+      read_body(connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE)) do |body|
+        AtlasRb::Mash.new(body)
+      end
     end
 
     # Create a new Work in an existing Collection.
@@ -601,15 +606,20 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Array<AtlasRb::Mash>] the listing from `GET /works/<id>/assets`,
+    # @return [Array<AtlasRb::Mash>, nil] the listing from `GET /works/<id>/assets`,
     #   one entry per attached asset.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example
     #   AtlasRb::Work.assets("w-789").each { |a| puts a.label }
     def self.assets(id, nuid: nil, on_behalf_of: nil)
-      JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/assets')&.body
-      ).map { |entry| AtlasRb::Mash.new(entry) }
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/assets')) do |body|
+        body.map { |entry| AtlasRb::Mash.new(entry) }
+      end
     end
 
     # List a Work's page FileSets in order, each with its assets.
@@ -633,18 +643,23 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Array<AtlasRb::Mash>] one entry per page FileSet, in page
+    # @return [Array<AtlasRb::Mash>, nil] one entry per page FileSet, in page
     #   order: `{ "noid", "type", "position", "tombstoned", "assets" => [...] }`.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Assemble manifest canvases in page order
     #   AtlasRb::Work.file_sets("w-789").each do |page|
     #     iiif = page.assets.find { |a| a["uri"] }
     #     add_canvas(order: page.position, image: iiif&.uri)
     #   end
     def self.file_sets(id, nuid: nil, on_behalf_of: nil)
-      JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/file_sets')&.body
-      ).map { |entry| AtlasRb::Mash.new(entry) }
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/file_sets')) do |body|
+        body.map { |entry| AtlasRb::Mash.new(entry) }
+      end
     end
 
     # Fetch the Work-level METS structural metadata (page order).
@@ -674,14 +689,16 @@ module AtlasRb
     #   "pages" => [...] } }` — or `nil` when the Work has no METS yet
     #   (never completed) or does not exist.
     #
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example
     #   AtlasRb::Work.mets("w-789").mets.pages.map(&:order)
     #   # => [1, 2, 3]
     def self.mets(id, nuid: nil, on_behalf_of: nil)
-      response = connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/mets')
-      return nil if response.status == 404
-
-      AtlasRb::Mash.new(JSON.parse(response.body))["work"]
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/mets')) do |body|
+        AtlasRb::Mash.new(body)["work"]
+      end
     end
 
     # Fetch the Work's MODS representation in the requested format.
@@ -695,15 +712,20 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [String] the raw response body in the requested format.
+    # @return [String, nil] the raw response body in the requested format.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example
     #   AtlasRb::Work.mods("w-789", "html")
     def self.mods(id, kind = nil, nuid: nil, on_behalf_of: nil)
       # json default, html, xml
-      connection({}, nuid, on_behalf_of: on_behalf_of).get(
-        ROUTE + id + '/mods' + (kind.to_s.empty? ? '' : ".#{kind}")
-        )&.body
+      read_raw(connection({}, nuid, on_behalf_of: on_behalf_of).get(
+                 ROUTE + id + '/mods' + (kind.to_s.empty? ? '' : ".#{kind}")
+               ))
     end
 
     # List the Collections a Work is a *linked* member of.
@@ -722,17 +744,20 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Array<String>] linked Collection noids (possibly empty). The
+    # @return [Array<String>, nil] linked Collection noids (possibly empty). The
     #   shape mirrors {Collection.children} — a bare array of ids, not an
     #   envelope.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example
     #   AtlasRb::Work.linked_members("w-789")
     #   # => ["col-456", "col-457"]
     def self.linked_members(id, nuid: nil, on_behalf_of: nil)
-      JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/linked_members')&.body
-      )
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/linked_members'))
     end
 
     # Add a linked membership: surface a Work in an additional Collection.
@@ -849,18 +874,21 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Hash] `{"outbound" => {predicate => [noid, …]}, "inbound" => {…}}`.
+    # @return [Hash, nil] `{"outbound" => {predicate => [noid, …]}, "inbound" => {…}}`.
     #   `outbound` is what this Work asserts, `inbound` what other Works assert
     #   about it. Predicates holding no edges are omitted, so both maps are
     #   `{}` for an unassociated Work.
     #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
     # @example
     #   AtlasRb::Work.associations("w-789")
     #   # => {"outbound" => {"is_codebook_for" => ["w-123"]}, "inbound" => {}}
     def self.associations(id, nuid: nil, on_behalf_of: nil)
-      JSON.parse(
-        connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/associations')&.body
-      )
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/associations'))
     end
 
     # Assert that this Work stands in a typed relationship to another Work.
