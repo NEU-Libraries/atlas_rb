@@ -3,6 +3,10 @@
 require "faraday"
 require "faraday/multipart"
 require "faraday/follow_redirects"
+# Retry middleware. Faraday 2 extracted it into its own gem, so a stack
+# without this require has no retry at all — see
+# AtlasRb::FaradayHelper#retry_reads for the policy.
+require "faraday/retry"
 # Pooling adapter. Required here, not lazily, because the transport pins it on
 # every connection — see AtlasRb::FaradayHelper#persistent_adapter.
 require "faraday/net_http_persistent"

@@ -91,6 +91,56 @@ module AtlasRb
     # @return [Integer, nil]
     attr_accessor :connection_pool_size
 
+    # Seconds to wait for a socket to open. `nil` takes
+    # {AtlasRb::Transport::DEFAULT_OPEN_TIMEOUT}; `false` removes the deadline.
+    #
+    # Set on every connection the gem builds, because `Net::HTTP`'s 60s default
+    # is a fallback rather than a considered number, and a *refused* connect is
+    # the fast case anyway — this bounds the connect that hangs.
+    #
+    # @return [Numeric, false, nil]
+    attr_accessor :open_timeout
+
+    # Seconds to wait for a response on the JSON and system connections. `nil`
+    # takes {AtlasRb::Transport::DEFAULT_READ_TIMEOUT}; `false` removes the
+    # deadline.
+    #
+    # This is the slot that protects the *host*, not the gem: a consumer that
+    # fans out several reads per request thread parks that thread — and its
+    # share of the socket pool — for as long as a hung Atlas keeps the socket
+    # open, so an unbounded read turns one degraded backend into a front-end
+    # outage. It is a per-socket-read deadline, not a whole-response budget, so
+    # a long streaming download is unaffected as long as bytes keep arriving.
+    #
+    # A call that legitimately outlives the budget overrides it per request:
+    #
+    #   connection({}, nuid).get(path) { |req| req.options.timeout = 120 }
+    #
+    # @return [Numeric, false, nil]
+    attr_accessor :read_timeout
+
+    # Seconds to wait for a response on the multipart connection. `nil` (the
+    # default) leaves it uncapped, because a multi-gigabyte binary upload has
+    # no defensible cap and those calls run in jobs rather than on a request
+    # thread.
+    #
+    # @return [Numeric, nil]
+    attr_accessor :upload_read_timeout
+
+    # Extra attempts a read gets when it fails in transport (a refused or
+    # reset connection, a timeout) — so `2` means three attempts in all.
+    # `nil` takes {AtlasRb::Transport::DEFAULT_READ_RETRIES}; `0` disables
+    # retrying.
+    #
+    # Only idempotent reads are replayed, and only on an exception: a response
+    # Atlas actually sent is never retried. The maintenance `503` is the case
+    # that matters there — its `Retry-After` is measured in minutes, so an
+    # in-band retry would ignore it and hammer the window instead of letting
+    # {AtlasRb::ReadOnlyModeError} reach the caller.
+    #
+    # @return [Integer, nil]
+    attr_accessor :read_retries
+
     # Requests to send on one pooled socket before replacing it. `nil` (the
     # default) means no cap, which is what a direct connection to Puma wants.
     # Set it when something between the client and Puma caps requests per

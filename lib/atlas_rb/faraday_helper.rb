@@ -40,9 +40,10 @@ module AtlasRb
   #
   # Every builder brackets its request in an `ActiveSupport::Notifications`
   # event named **`request.atlas_rb`** (Faraday's `:instrumentation`
-  # middleware, wired as the *outermost* handler so a redirect hop — e.g. the
+  # middleware, wired above the whole stack so a redirect hop — e.g. the
   # `/resources/:noid` NOID resolver — folds into one event per logical call
-  # rather than being double-counted). The payload is the Faraday `env`, so a
+  # rather than being double-counted; a retried call emits one event per
+  # attempt). The payload is the Faraday `env`, so a
   # subscriber reads `payload.method` / `payload.url` and the event's duration.
   # This lets a host count/time Atlas round-trips (an N+1-over-HTTP detector)
   # without reaching into gem internals. It is guarded on
@@ -51,12 +52,26 @@ module AtlasRb
   # attached the emit degrades to a listener lookup + `yield`, so it is safe to
   # leave in the stack permanently — opt-in lives entirely on the consumer side.
   #
-  # ## Read errors
+  # ## Deadlines, retries, and read errors
   #
-  # {Middleware::RaiseOnReadError} raises on a non-2xx read, so no binding can
-  # return an error body as if it were data. Registered on the JSON and system
-  # connections; the multipart connection carries only writes, which have their
-  # own guard in {AtlasRb::Resource.write_resource}.
+  # Three transport policies apply to the JSON and system connections:
+  #
+  # - **A deadline.** `open_timeout` and `timeout` are set from
+  #   {AtlasRb::Transport}, because an unbounded read is not a problem the
+  #   consumer can fix — a host can rescue what the gem raises, but it cannot
+  #   impose a deadline on a socket the gem owns. See
+  #   {AtlasRb::Configuration#read_timeout} for the numbers and the per-call
+  #   override.
+  # - **One retry layer.** An idempotent read that fails in transport is
+  #   replayed with jittered backoff (see {#retry_reads}); `Net::HTTP`'s own
+  #   silent replay is switched off in
+  #   {AtlasRb::Transport.configure_persistent} so the two cannot multiply.
+  # - **A read-error guard.** {Middleware::RaiseOnReadError} raises on a
+  #   non-2xx read, so no binding can return an error body as if it were data.
+  #
+  # The multipart connection takes none of the three: a binary upload
+  # legitimately runs for minutes, must not be replayed part-way through, and
+  # is a write.
   #
   # ## Connection reuse
   #
@@ -123,6 +138,8 @@ module AtlasRb
       url  = ENV.fetch("ATLAS_URL", nil)
       conn = AtlasRb::Transport.connection_for([:json, url]) do
         Faraday.new(url: url) do |f|
+          bound_timeouts(f, AtlasRb::Transport.read_timeout)
+          retry_reads(f)
           instrument(f)
           error_middleware(f, reads: true)
           f.response :follow_redirects
@@ -166,6 +183,11 @@ module AtlasRb
       url  = ENV.fetch("ATLAS_URL", nil)
       conn = AtlasRb::Transport.connection_for([:multipart, url]) do
         Faraday.new(url: url) do |f|
+          # No read deadline by default, and no retry: a multi-gigabyte upload
+          # outlives any page-sized budget, and a partially-streamed POST must
+          # not be replayed blindly — even under an `Idempotency-Key`, which
+          # the transport cannot see.
+          bound_timeouts(f, AtlasRb::Transport.upload_read_timeout)
           instrument(f)
           error_middleware(f, reads: false)
           f.request :multipart
@@ -238,6 +260,8 @@ module AtlasRb
       url  = ENV.fetch("ATLAS_URL", nil)
       conn = AtlasRb::Transport.connection_for([:system, url]) do
         Faraday.new(url: url) do |f|
+          bound_timeouts(f, AtlasRb::Transport.read_timeout)
+          retry_reads(f)
           instrument(f)
           error_middleware(f, reads: true)
           f.response :follow_redirects
@@ -332,6 +356,22 @@ module AtlasRb
       end
     end
 
+    # Put a deadline on every connection the gem builds. `Net::HTTP`'s own 60s
+    # defaults are a fallback rather than a considered number, and they are not
+    # something a host can retrofit from outside — no amount of rescuing in the
+    # consumer shortens a socket the gem owns. So the gem ships the numbers.
+    #
+    # `read` is passed in rather than read here, because the shapes want
+    # different answers: a page read should fail inside a user's patience, a
+    # binary upload legitimately runs for minutes.
+    #
+    # Note this is `Net::HTTP`'s per-read deadline, not a total-response
+    # budget — a streaming download stays alive as long as bytes keep arriving.
+    def bound_timeouts(builder, read)
+      builder.options.open_timeout = AtlasRb::Transport.open_timeout
+      builder.options.timeout      = read
+    end
+
     # Register the error-translating middleware, in the one order that works.
     #
     # Faraday runs `on_complete` innermost-first, so the handler registered
@@ -363,10 +403,52 @@ module AtlasRb
       builder.use AtlasRb::Middleware::RaiseOnReadOnlyMode
     end
 
-    # Register Faraday's instrumentation middleware as the OUTERMOST handler so
-    # each logical call emits exactly one {INSTRUMENTATION_EVENT} — a redirect
-    # hop (e.g. the `/resources/:noid` resolver) is bracketed with the request
-    # it redirects to, not counted twice. Guarded on
+    # Retry an idempotent read that failed in transport, in exactly one layer.
+    #
+    # Registered as the outermost handler — outside {#instrument}, so each
+    # attempt is its own {INSTRUMENTATION_EVENT} rather than three attempts
+    # hiding inside one event. A retried call really is two round-trips, and a
+    # host counting them should see both.
+    #
+    # Three deliberate narrowings:
+    #
+    # - **`retry_statuses` is empty.** Only an exception retries; a response
+    #   Atlas actually sent never does. The maintenance `503` is why: its
+    #   `Retry-After` is measured in minutes, so retrying in band would ignore
+    #   it and hammer the window, and {Middleware::RaiseOnReadOnlyMode} must
+    #   reach the caller on the first response.
+    # - **`methods` is narrower than HTTP idempotency.** `PUT` and `DELETE` are
+    #   idempotent in the spec, but Atlas's `DELETE` purges an OCFL object and
+    #   its `PATCH`/`PUT` writes carry optimistic-lock semantics. A replay
+    #   there should be a call site's decision, not a transport default.
+    # - **`Faraday::ConnectionFailed` is added explicitly.** It is not in the
+    #   middleware's own default list, and it is the failure that matters most
+    #   here: an Atlas restart mid-page-load is a refused connect, which one
+    #   retry hides completely.
+    def retry_reads(builder)
+      builder.request :retry,
+                      max:                 AtlasRb::Transport.read_retries,
+                      interval:            0.1,
+                      backoff_factor:      2,
+                      interval_randomness: 0.5, # jitter, so a fleet doesn't retry in lockstep
+                      max_interval:        1.0,
+                      methods:             %i[get head options],
+                      retry_statuses:      [],
+                      exceptions:          [Faraday::ConnectionFailed,
+                                            Faraday::TimeoutError,
+                                            Errno::ECONNREFUSED,
+                                            Errno::ECONNRESET,
+                                            Errno::ETIMEDOUT,
+                                            EOFError]
+    end
+
+    # Register Faraday's instrumentation middleware so each logical call emits
+    # exactly one {INSTRUMENTATION_EVENT} — a redirect hop (e.g. the
+    # `/resources/:noid` resolver) is bracketed with the request it redirects
+    # to, not counted twice. It sits directly inside {#retry_reads}, the only
+    # handler above it, so a retried call emits one event per attempt: the
+    # redirect folding is about one logical call, and a retry is a second
+    # round-trip rather than the same one. Guarded on
     # `defined?(ActiveSupport::Notifications)` because Faraday defaults its
     # instrumenter to that constant and would `NameError` at build time on the
     # headless path where ActiveSupport isn't loaded; there, the emit is simply

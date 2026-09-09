@@ -18,6 +18,13 @@ module AtlasRb
   # build time now — per-request state (the signed assertion, the
   # `Idempotency-Key`, the query params) rides on {Proxy} instead.
   #
+  # One consequence is worth knowing: the pool size, the timeouts and the
+  # retry count are read when a connection is first built, so a host must set
+  # them before its first Atlas call. Changing them later takes a
+  # {reset_connections!} to bite. A single call that needs a different
+  # deadline sets it on the request instead — the block {Proxy} forwards runs
+  # last, so `req.options.timeout` there wins over the connection's.
+  #
   # ## Why not a connection per thread
   #
   # A thread-local connection is the obvious cheap version and it is wrong for
@@ -42,6 +49,28 @@ module AtlasRb
     # limit): Cerberus draws up to four concurrent reads per Puma thread, so
     # the useful number is that fan-out times the thread count, plus headroom.
     DEFAULT_POOL_SIZE = 16
+
+    # Seconds to wait for a socket to open. Atlas is a container on the same
+    # host in development and a service on the same overlay network in
+    # staging, so a healthy connect is sub-millisecond and two seconds is
+    # already generous. A *refused* connect fails immediately either way; this
+    # bounds the connect that hangs.
+    DEFAULT_OPEN_TIMEOUT = 2
+
+    # Seconds to wait for a response. Sized off the measured read path — the
+    # slowest single call on a Cerberus Work page was ~200ms and the whole
+    # eight-call page ~450ms — so this is roughly fifty times the observed
+    # per-call cost. That leaves room for a cold cache or a slow Solr commit
+    # while still failing inside a user's patience rather than parking the
+    # request thread for minutes.
+    DEFAULT_READ_TIMEOUT = 10
+
+    # Extra attempts an idempotent read gets after a transport failure, so
+    # three attempts in all. Three is the ceiling the SRE guidance settles on
+    # and the retry middleware's own default: enough to hide a restart, few
+    # enough that a struggling Atlas is not handed 3x the load it is already
+    # failing to serve.
+    DEFAULT_READ_RETRIES = 2
 
     MUTEX = Mutex.new
     # Separate from MUTEX so the key cache can never deadlock against a
@@ -147,17 +176,20 @@ module AtlasRb
       # `Net::HTTP::Persistent`. Called by the adapter's config block on every
       # request, so it must stay assignment-only and cheap.
       #
-      # `max_retries` is restored to 1 here because the adapter zeroes it, and
-      # zero is the wrong default for a pooled socket: a server that closed an
-      # idle connection produces an error on the next write, and one retry is
-      # what turns that into a reconnect instead of a caller-visible failure.
-      # `Net::HTTP` gates its retry on `IDEMPOTENT_METHODS_`, so the retry-safe
-      # creates (`POST /works`, `/file_sets`, `/files`) are never replayed.
+      # `max_retries` is pinned to 0 so the retry policy lives in exactly one
+      # layer. `Net::HTTP` replays an idempotent request itself on a read
+      # timeout, which doubles every timeout wait, and it does so with no
+      # backoff, no jitter and no instrumentation. The stale-pooled-socket case
+      # that wants a replay — a server that closed an idle connection, seen as
+      # `EOFError` / `ECONNRESET` / `Faraday::ConnectionFailed` on the next
+      # write — is covered by the retry middleware
+      # ({AtlasRb::FaradayHelper#retry_reads}), which is visible and bounded.
+      # Stacking both multiplies the attempts.
       #
       # @param http [Net::HTTP::Persistent]
       # @return [void]
       def configure_persistent(http)
-        http.max_retries  = 1
+        http.max_retries  = 0
         http.max_requests = AtlasRb.config.connection_max_requests
       end
 
@@ -166,6 +198,35 @@ module AtlasRb
       # @return [Integer]
       def pool_size
         AtlasRb.config.connection_pool_size || DEFAULT_POOL_SIZE
+      end
+
+      # Socket-open deadline for a newly built connection.
+      #
+      # @return [Numeric, nil] seconds, or nil for no deadline.
+      def open_timeout
+        resolve_timeout(AtlasRb.config.open_timeout, DEFAULT_OPEN_TIMEOUT)
+      end
+
+      # Response deadline for a newly built JSON or system connection.
+      #
+      # @return [Numeric, nil] seconds, or nil for no deadline.
+      def read_timeout
+        resolve_timeout(AtlasRb.config.read_timeout, DEFAULT_READ_TIMEOUT)
+      end
+
+      # Response deadline for a newly built multipart connection. Uncapped by
+      # default — a binary upload legitimately outlives any page-sized budget.
+      #
+      # @return [Numeric, nil] seconds, or nil for no deadline.
+      def upload_read_timeout
+        AtlasRb.config.upload_read_timeout
+      end
+
+      # Extra attempts an idempotent read gets after a transport failure.
+      #
+      # @return [Integer]
+      def read_retries
+        AtlasRb.config.read_retries || DEFAULT_READ_RETRIES
       end
 
       # Parse a PEM into an `OpenSSL::PKey`, reusing the last parse.
@@ -212,6 +273,16 @@ module AtlasRb
       end
 
       private
+
+      # A configured timeout of `nil` means "no preference, take the default";
+      # `false` means "no deadline", which the socket wants as `nil`. Keeping
+      # those distinct is what lets a host opt out without having to know the
+      # default it is opting out of.
+      def resolve_timeout(value, default)
+        return default if value.nil?
+
+        value || nil
+      end
 
       def connections
         @connections ||= {}
