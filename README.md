@@ -192,6 +192,62 @@ pool between examples, or a socket from one example stays open into the next:
 config.after(:each, :atlas_rb_server) { AtlasRb::Transport.reset_connections! }
 ```
 
+### Deadlines and retries
+
+Every connection the gem builds carries a deadline, because a host cannot
+retrofit one: it can rescue what the gem raises, but it cannot impose a
+timeout on a socket the gem owns. Left to `Net::HTTP`'s defaults a hung Atlas
+held a single `GET` for two minutes, which parks a request thread and its
+share of the socket pool for that whole time.
+
+Four knobs, all optional:
+
+```ruby
+AtlasRb.configure do |config|
+  # Seconds to wait for a socket to open. Defaults to 2 — Atlas is on the same
+  # host or the same overlay network, so a healthy connect is sub-millisecond.
+  config.open_timeout = 2
+
+  # Seconds to wait for a response on the JSON and system connections.
+  # Defaults to 10. This is a per-socket-read deadline, not a whole-response
+  # budget, so a streaming download is fine as long as bytes keep arriving.
+  config.read_timeout = 10
+
+  # The same, for binary uploads. Defaults to nil — uncapped, because a
+  # multi-gigabyte upload has no defensible cap and those calls run in jobs.
+  config.upload_read_timeout = nil
+
+  # Extra attempts an idempotent read gets after a transport failure, so 2
+  # means three attempts in all. Defaults to 2; set 0 to disable.
+  config.read_retries = 2
+end
+```
+
+Set a timeout slot to `false` to remove the deadline rather than change it.
+All four are read when a connection is first built, so set them before the
+first Atlas call.
+
+A single call that legitimately outlives the budget overrides it on the
+request — the block the transport forwards runs last, so it wins:
+
+```ruby
+# A bulk export paging a large Collection, or a metadata dump:
+AtlasRb::Work.connection({}, nuid).get("/resources/#{id}/descendant_works") do |req|
+  req.options.timeout = 120
+end
+```
+
+Only reads are retried, and only when the request failed in transport — a
+refused or reset connection, or a timeout. A response Atlas actually sent is
+never retried, which is what keeps the maintenance `503` honest: its
+`Retry-After` is measured in minutes, so `ReadOnlyModeError` reaches you on
+the first response instead of the gem waiting in band. Writes are never
+retried; a `POST` that may have landed is the call site's decision, not the
+transport's.
+
+Each attempt emits its own `request.atlas_rb` notification, so a host counting
+round-trips sees a retry as the second round-trip it really is.
+
 ## Resource hierarchy
 
 ```
@@ -506,6 +562,38 @@ question, and callers already nil-check a `find`:
 ```ruby
 AtlasRb::Work.find("doesnotexist")   # => nil
 ```
+
+That holds across the whole read surface, not just `find`. A **list** read
+returns `nil` too, rather than an empty array, so you can tell "no such
+container" from "an empty container" — two answers that mean different things
+to a UI:
+
+```ruby
+AtlasRb::Work.assets("doesnotexist")   # => nil
+AtlasRb::Work.assets(real_work_noid)   # => [] for a Work with no assets
+```
+
+Anything else a read gets back raises `AtlasRb::ResourceError`, which carries
+the status, the endpoint and Atlas's body. That is the point: the failure is
+attributable where it happened, instead of surfacing as a `NoMethodError` on
+`nil` several frames later, or — for the `mods` bindings, which pass Atlas's
+rendered body through by design — as an error page returned to you as a
+`String` and rendered:
+
+```ruby
+begin
+  AtlasRb::Work.mods(noid, "html")
+rescue AtlasRb::ResourceError => e
+  e.status    # => 403
+  e.message   # => "GET /works/9zw3s1h/mods.html → 403: {\"error\":\"forbidden\",…}"
+end
+```
+
+A `410 Gone` is returned rather than raised, the same way `find` returns a
+tombstone. And the two streaming reads (`Blob.content`,
+`Blob.version_content`) hand you `{ status:, headers: }` instead of raising,
+because their chunks reach you as they arrive — check the status before you
+treat those bytes as a file.
 
 A **write** raises `AtlasRb::NotFoundError`. The caller asked for a change and
 did not get one, so `nil` would invite the silent failure the read guard was

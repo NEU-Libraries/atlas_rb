@@ -1,5 +1,152 @@
 # Changelog
 
+## 1.16.0
+
+### Fixed — every read binding consults the HTTP status before it reads the body
+
+Twenty-nine read bindings parsed or returned a response body without checking
+the status. `Resource.fetch_resource` had enforced that contract for the typed
+single-resource `find`s since 1.8.3, but a binding had to opt in by routing
+through it, and the rest of the read surface never did. Four failure shapes
+came of it:
+
+| Binding shape | What the caller got on an error response |
+|---|---|
+| `JSON.parse(body).map { Mash.new(...) }` | `NoMethodError: undefined method 'each_pair' for [...]:Array` — the error envelope iterated as pairs |
+| `JSON.parse(body)["key"].map` | `NoMethodError ... for nil:NilClass`, raised far from the cause |
+| `Mash.new(JSON.parse(body))` | **no error at all** — the envelope came back as if it were data |
+| raw `resp.body` (the `mods` bindings) | **no error at all** — the error text came back as a `String`, ready to be rendered |
+| any of the above, non-JSON body | `JSON::ParserError`, naming neither the status nor the endpoint |
+
+Three of those were worse than a wrong error class:
+
+- **`Work.mods`** (and `Collection.mods`, `Community.mods`, `Resource.mods`,
+  `Resource.mods_version`) returned Atlas's error body as a `String`. Atlas
+  renders MODS to HTML server-side, so a consumer marks that body HTML-safe
+  and writes it into its own page. Pointing `ATLAS_URL` at another service in
+  the stack produced that service's stack trace by this route.
+- **`Maintenance.read`** failed open. A `401` parsed into a `Mash` with no
+  `read_only` key, so a host read "no maintenance window" precisely when it
+  could not read the flag — the opposite of the endpoint's contract, which is
+  that a client unable to read the window cannot honour it.
+- **`Blob.version_content`** discarded the status entirely, so an error body
+  became the bytes of the file an admin had just downloaded.
+
+The fix is one Faraday middleware plus one shared binding-level guard, rather
+than twenty-nine near-identical call-site edits:
+
+- **`Middleware::RaiseOnReadError`** raises `AtlasRb::ResourceError` on a
+  non-2xx read, at the transport, where a binding cannot forget it. Registered
+  on the `:json` and `:system` connections, ahead of the typed translators so
+  their `on_complete` still runs first — a maintenance `503` stays a
+  `ReadOnlyModeError`, a refused re-parent stays a `ForbiddenError`.
+- **`FaradayHelper#read_body` / `#read_raw`** apply the same mapping where a
+  binding can see it, which keeps the guarantee true for a caller who has
+  stubbed the transport. Every read binding now funnels through one of them,
+  and `Resource.fetch_resource` delegates to `read_body`.
+
+The mapping, uniform across the read surface:
+
+| Atlas answers | Read binding |
+|---|---|
+| `2xx` | the parsed body (or the raw body, for `mods`) |
+| `404` | `nil` |
+| `410` | the tombstone body |
+| anything else | raises `AtlasRb::ResourceError`, carrying the status, verb, path and body |
+
+**Two behaviour changes to note when upgrading.**
+
+`404` now returns `nil` where a binding used to raise `JSON::ParserError` on
+the empty body, and list reads return `nil` rather than `[]` — so a caller can
+tell "no such container" from "an empty container", which mean different
+things to a UI. Callers that iterate a list read need `&.each` or a nil check.
+
+`Blob.version_content` now returns `{ status:, headers: }`, matching
+`Blob.content`. Its status cannot be raised on: chunks reach the caller as
+they arrive, so by the time the status is known an error body would already
+have been streamed. A caller passing those chunks to an HTTP response must
+consult the status, or an Atlas error page becomes the downloaded file.
+
+`Reset.clean` raises where the env gate that guards `GET /reset` is closed,
+instead of returning the refusal body. A test suite that opens with a reset and
+then carries on against un-wiped state fails somewhere else entirely, so this
+one has to be loud.
+
+`Authentication.login` and `.groups` no longer document
+`@raise [JSON::ParserError]`. An auth failure is a `401` and now raises
+`ResourceError`; a host rescuing `JSON::ParserError` as a stand-in for "the
+read failed" can drop it.
+
+The streaming reads (`Blob.content`, `Blob.version_content`) are exempt from
+the middleware, which is keyed off `on_data` — see the middleware's note on
+why raising after the chunks have gone out is too late to help.
+
+### Added — a request deadline and a bounded retry on every connection
+
+`lib/` set no timeout anywhere, so `Net::HTTP`'s defaults applied: 60s open,
+60s read. Worse, the pooled adapter's `max_retries = 1` made `Net::HTTP`
+replay an idempotent GET after a read timeout, so a hung Atlas held a single
+`GET` for **120 seconds**. A consumer that fans out four reads per request
+thread parks that thread — and four sockets from a sixteen-socket pool — for
+that whole time, which turns one degraded backend into a front-end outage. No
+host can fix this from outside: it can rescue what the gem raises, but it
+cannot impose a deadline on a socket the gem owns.
+
+Four new configuration slots, following the `connection_pool_size` pattern
+(optional, read at connection-build time):
+
+| Slot | Default | Applies to |
+|---|---|---|
+| `open_timeout` | `2` seconds | all three connection shapes |
+| `read_timeout` | `10` seconds | `:json`, `:system` |
+| `upload_read_timeout` | `nil` (uncapped) | `:multipart` |
+| `read_retries` | `2` (three attempts) | `:json`, `:system` |
+
+`read_timeout` is sized off the measured read path — the slowest single call
+on a consumer's Work page was ~200ms and the whole eight-call page ~450ms — so
+ten seconds is roughly fifty times the observed per-call cost. It is
+`Net::HTTP`'s per-read deadline rather than a whole-response budget, so a
+streaming download is unaffected as long as bytes keep arriving. Set a slot to
+`false` to remove a deadline, or override one call:
+
+```ruby
+connection({}, nuid).get(path) { |req| req.options.timeout = 120 }
+```
+
+The multipart shape takes no read deadline and no retry: a multi-gigabyte
+upload legitimately outlives any page-sized budget, and a partially-streamed
+`POST` must not be replayed blindly — even under an `Idempotency-Key`, which
+the transport cannot see.
+
+**Retries now live in exactly one layer.** `faraday-retry ~> 2.4` is a new
+runtime dependency, registered as the outermost handler on the `:json` and
+`:system` connections, and `Net::HTTP`'s own `max_retries` drops from `1` to
+`0`. The 1.15.0 reasoning for that `1` was sound — a server that closed an
+idle pooled socket errors on the next write, and a replay is what turns that
+into a reconnect — and the middleware covers the same case better:
+`EOFError`, `Errno::ECONNRESET` and `Faraday::ConnectionFailed` are all in its
+exception list, now with jittered backoff, a bounded attempt count, and a
+`request.atlas_rb` notification per attempt instead of a silent replay.
+Stacking both layers would have given six timeout waits per call.
+
+The policy is deliberately narrow:
+
+- **Exceptions only** (`retry_statuses: []`). A response Atlas actually sent
+  is never retried. The maintenance `503` is why: its `Retry-After` is
+  measured in minutes, so an in-band retry would ignore it and hammer the
+  window, and `ReadOnlyModeError` must reach the caller on the first response.
+- **`GET` / `HEAD` / `OPTIONS` only**, narrower than HTTP idempotency. `PUT`
+  and `DELETE` are idempotent in the spec, but Atlas's `DELETE` purges an OCFL
+  object and its `PATCH`/`PUT` writes carry optimistic-lock semantics. A
+  replay there should be a call site's decision.
+- **`Faraday::ConnectionFailed` added explicitly.** It is not in the
+  middleware's own default list, and it is the failure that matters most here:
+  an Atlas restart mid-page-load is a refused connect, which one retry hides
+  completely.
+
+Worst case per `GET` is now three attempts of ten seconds plus backoff, about
+**30 seconds**, down from 120.
+
 ## 1.15.1
 
 ### Fixed — `Resource.permissions` no longer coerces a refused read to `nil`

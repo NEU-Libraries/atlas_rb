@@ -149,7 +149,11 @@ module AtlasRb
     #   unused (Atlas ignores it on this endpoint). Mostly here for symmetry.
     # @param on_behalf_of [String, nil] optional NUID. Falls through to
     #   {AtlasRb.config}.default_on_behalf_of when omitted.
-    # @return [String, nil] the raw response body from `GET /reset`.
+    # @return [String, nil] the raw response body from `GET /reset`, or `nil`
+    #   on a `404`.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx — notably where the
+    #   env gate is closed. A reset that did not happen has to be loud: a suite
+    #   that carries on against un-wiped state fails somewhere else entirely.
     #
     # @example
     #   AtlasRb::Reset.clean
