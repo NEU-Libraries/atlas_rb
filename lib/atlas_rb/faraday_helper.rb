@@ -336,11 +336,23 @@ module AtlasRb
       return false if resp.status == 404
       return true if resp.success? || resp.status == 410
 
-      env = resp.env
       raise AtlasRb::ResourceError.new(
-        "#{env&.method.to_s.upcase} #{env&.url&.path} → #{resp.status}: #{resp.body}",
-        response: resp
+        "#{request_target(resp)} → #{resp.status}: #{resp.body}", response: resp
       )
+    end
+
+    # The verb and path of a completed request — `"GET /works/abc123"` — so a
+    # failure names what did not happen. Read off the response rather than
+    # passed in, which keeps every binding a plain wrap; shared with
+    # {AtlasRb::Resource.write_resource} so a read failure and a write failure
+    # read the same way in a log.
+    #
+    # @param resp [Faraday::Response] the completed response.
+    # @return [String] the verb and path.
+    # @api private
+    def request_target(resp)
+      env = resp.env
+      "#{env&.method.to_s.upcase} #{env&.url&.path}"
     end
 
     # Pin the pooling adapter on every builder. Pinned rather than taking

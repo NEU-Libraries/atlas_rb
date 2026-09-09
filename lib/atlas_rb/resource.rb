@@ -421,28 +421,15 @@ module AtlasRb
     # @api private
     def self.write_resource(resp)
       if resp.status == 404
-        raise AtlasRb::NotFoundError.new("#{write_target(resp)} → 404 (no such resource)", response: resp)
+        raise AtlasRb::NotFoundError.new("#{request_target(resp)} → 404 (no such resource)", response: resp)
       end
 
       unless resp.success? || resp.status == 410
-        raise AtlasRb::ResourceError.new("#{write_target(resp)} → #{resp.status}: #{resp.body}", response: resp)
+        raise AtlasRb::ResourceError.new("#{request_target(resp)} → #{resp.status}: #{resp.body}", response: resp)
       end
 
       JSON.parse(resp.body)
     end
     private_class_method :write_resource
-
-    # The verb and path of a completed request — `"PATCH /works/abc123"` — so a
-    # {write_resource} failure names what did not happen. Read off the response
-    # rather than passed in, keeping every write binding a plain wrap.
-    #
-    # @param resp [Faraday::Response] the completed response.
-    # @return [String] the verb and path.
-    # @api private
-    def self.write_target(resp)
-      env = resp.env
-      "#{env&.method.to_s.upcase} #{env&.url&.path}"
-    end
-    private_class_method :write_target
   end
 end
