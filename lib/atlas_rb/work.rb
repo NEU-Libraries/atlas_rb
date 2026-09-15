@@ -358,6 +358,9 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
+    # @param origin [String, nil] free-text tag naming the surface that made this
+    #   edit (e.g. `"metadata_form"`, `"xml_editor"`). Atlas records it verbatim
+    #   on the audit event; omit it and the event carries no origin.
     # @return [Hash] the parsed JSON response from the patch.
     # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
     #   resource, so the write did not happen.
@@ -366,12 +369,13 @@ module AtlasRb
     #
     # @example
     #   AtlasRb::Work.update("w-789", "/tmp/work-mods.xml")
-    def self.update(id, xml_path, nuid: nil, on_behalf_of: nil)
-      payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
-                                                           "application/xml",
-                                                           File.basename(xml_path)) }
+    #
+    # @example Recording which editing surface made the change
+    #   AtlasRb::Work.update("w-789", "/tmp/work-mods.xml", origin: "xml_editor")
+    def self.update(id, xml_path, nuid: nil, on_behalf_of: nil, origin: nil)
       AtlasRb::Mash.new(write_resource(
-        multipart(nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id, payload)
+        multipart(nuid, on_behalf_of: on_behalf_of)
+          .patch(ROUTE + id, mods_upload_payload(xml_path, origin))
       ))
     end
 

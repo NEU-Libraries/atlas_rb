@@ -431,5 +431,29 @@ module AtlasRb
       JSON.parse(resp.body)
     end
     private_class_method :write_resource
+
+    # The multipart body behind {Work.update} / {Collection.update} /
+    # {Community.update}: the MODS document, plus the optional `origin` tag
+    # naming the surface that produced the edit.
+    #
+    # Atlas records `origin` verbatim on the audit event and never branches on
+    # it, so a host names its own surfaces (Cerberus sends `metadata_form`,
+    # `advanced_form`, `xml_editor`). A `nil` origin is left out of the body
+    # entirely rather than sent empty, so the audit event of a host that does
+    # not set one looks exactly like every event recorded before the field
+    # existed.
+    #
+    # @param xml_path [String] path to a MODS XML file on disk.
+    # @param origin [String, nil] the edit-origin tag, or `nil` to send none.
+    # @return [Hash] the multipart payload.
+    # @api private
+    def self.mods_upload_payload(xml_path, origin)
+      payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
+                                                           "application/xml",
+                                                           File.basename(xml_path)) }
+      payload[:origin] = origin.to_s unless origin.nil? || origin.to_s.empty?
+      payload
+    end
+    private_class_method :mods_upload_payload
   end
 end
