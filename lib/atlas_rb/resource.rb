@@ -25,6 +25,15 @@ module AtlasRb
     # method splits that into a normalized `{ "klass" => ..., "resource" => ... }`
     # pair so callers can dispatch on type.
     #
+    # ## What the resolver covers
+    #
+    # Atlas answers `/resources/:id` for its Valkyrie-backed types only:
+    # {Work}, {Collection}, {Community}, {FileSet}, {Blob}, {Delegate} and
+    # {Person}. A {Compilation} is an ActiveRecord row in Atlas rather than a
+    # Valkyrie resource, so the resolver never finds one — use
+    # {Compilation.find} for those. That makes `nil` ambiguous: it means "no
+    # such id" **or** "that id names a Compilation".
+    #
     # @param id [String] an Atlas resource ID of any type.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
@@ -34,10 +43,14 @@ module AtlasRb
     #   omitted.
     # @return [Hash{String => String, Hash}, nil] hash with two keys, or `nil`
     #   when the id resolves to nothing (`404`):
-    #   - `"klass"` — the resource type, capitalized (e.g. `"Work"`).
+    #   - `"klass"` — the resource type as its class name, e.g. `"Work"`,
+    #     `"FileSet"`. That is the spelling Solr carries as
+    #     `internal_resource`, and {Resource.class_for} turns it into the class.
     #   - `"resource"` — the resource payload as a Hash.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an
     #   auth/validation error envelope), carrying Atlas's status + body.
+    # @raise [ArgumentError] when Atlas names a type this gem defines no class
+    #   for. See {Resource.class_for}.
     #
     # @example Polymorphic lookup
     #   AtlasRb::Resource.find("abc123")
@@ -46,7 +59,10 @@ module AtlasRb
       result = fetch_resource('/resources/' + id, nuid: nuid, on_behalf_of: on_behalf_of)
       return nil if result.nil?
 
-      AtlasRb::Mash.new("klass" => result.first[0].capitalize,
+      # The class's own name, never `capitalize` over the wire key: `capitalize`
+      # answers `"File_set"` for a `file_set`, which is not a constant in this
+      # namespace, and callers resolve this string to a class.
+      AtlasRb::Mash.new("klass" => class_for(result.first[0]).name.split("::").last,
                         "resource" => result.first[1])
     end
 
