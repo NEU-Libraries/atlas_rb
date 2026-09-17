@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.17.0
+
+### Fixed — `Resource.find` emitted a type string this namespace cannot resolve
+
+`find` derived its `"klass"` with `String#capitalize` over Atlas's JSON key,
+and `capitalize` is not the inverse of a Ruby class name once the type has two
+words. Atlas answers `{"file_set": {...}}`, and `"file_set".capitalize` is
+`"File_set"`. There is no `AtlasRb::File_set`.
+
+The doc comment stated the convention as a promise — *"the resource type,
+capitalized (e.g. `"Work"`)"* — and `"Work"` is the one shape where
+capitalizing happens to work. Every other consumer read that as "`const_get`
+this", so a FileSet NOID put a `NameError` in the caller's stack:
+
+```
+uninitialized constant AtlasRb::File_set
+```
+
+`find` now reports the class's own name, so a FileSet is `"FileSet"`.
+
+**This changes one value on the wire**: `"File_set"` becomes `"FileSet"`. That
+is the spelling Solr already carries as `internal_resource`, so a consumer fed
+by both sources now sees one vocabulary instead of two.
+
+### Added — `Resource.class_for`, the supported type-string → class lookup
+
+```ruby
+AtlasRb::Resource.class_for("file_set") # => AtlasRb::FileSet
+AtlasRb::Resource.class_for("FileSet")  # => AtlasRb::FileSet
+AtlasRb::Resource.class_for("File_set") # => AtlasRb::FileSet
+```
+
+Closing the loop on `find` used to mean reaching into this namespace by string
+on a naming convention the gem never promised. `class_for` reads a stated,
+closed set — `Resource::TYPE_MAP`, covering the eight `Resource` subclasses —
+and accepts all three spellings the DRS stack produces for a type: Atlas's
+wire key, Solr's `internal_resource`, and the pre-1.17.0 `"klass"` a caller
+can still be holding.
+
+The set is stated rather than derived because there is no rule to derive:
+`Blob`'s `ROUTE` is `/files/`.
+
+An unrecognized type raises `ArgumentError` — never `nil`, and never
+`const_get`, which would resolve an arbitrary constant in this namespace. Same
+argument `Middleware::RaiseOnReadError` settled for the read path: keep the
+failure where the cause is.
+
+### Documented — what the generic resolver actually covers
+
+Atlas answers `/resources/:id` for its Valkyrie-backed types only: `Work`,
+`Collection`, `Community`, `FileSet`, `Blob`, `Delegate` and `Person`. A
+`Compilation` is an ActiveRecord row in Atlas rather than a Valkyrie resource,
+so the resolver never finds one, though `Compilation.find` does. `nil` from
+`Resource.find` is therefore ambiguous: it means "no such id" **or** "that id
+names a Compilation". `Resource.find`'s YARD and the README both say so now.
+
 ## 1.16.0
 
 ### Fixed — every read binding consults the HTTP status before it reads the body

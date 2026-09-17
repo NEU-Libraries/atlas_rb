@@ -531,6 +531,42 @@ The two mutations raise the same way `reparent` does — `LinkedMemberError`
 on a structural `422` (carrying the envelope's `error` code as `#code`) and
 `ForbiddenError` on a `403` — instead of swallowing the envelope.
 
+### Resolving one id of unknown type (`Resource.find` and `Resource.class_for`)
+
+When a NOID arrives as runtime data and you do not know its type, resolve
+it generically and dispatch on the reported type:
+
+```ruby
+found = AtlasRb::Resource.find("b8gtjvk")
+found["klass"]                                   # => "FileSet"
+klass = AtlasRb::Resource.class_for(found["klass"])  # => AtlasRb::FileSet
+klass.find(found["resource"]["id"])
+```
+
+`class_for` is the supported way to turn a type string into a class. Do not
+`const_get` into the `AtlasRb` namespace: the mapping is a stated, closed
+set (`Resource::TYPE_MAP`), not a naming rule — `Blob`'s route is `/files/`,
+and a wire key like `file_set` is not the class name.
+
+It accepts every spelling the DRS stack produces for a type, because a
+caller cannot tell which one it is holding:
+
+| Spelling      | Where it comes from                        |
+|---------------|--------------------------------------------|
+| `"file_set"`  | Atlas's JSON wire key                      |
+| `"FileSet"`   | Solr's `internal_resource`, and `find`'s `"klass"` |
+| `"File_set"`  | a `"klass"` read from a gem before 1.17.0  |
+
+An unknown type raises `ArgumentError` rather than returning `nil`, so a
+type this gem does not model fails where the cause is.
+
+**What the resolver covers.** Atlas answers `/resources/:id` for its
+Valkyrie-backed types only: `Work`, `Collection`, `Community`, `FileSet`,
+`Blob`, `Delegate` and `Person`. A `Compilation` is an ActiveRecord row in
+Atlas rather than a Valkyrie resource, so the generic resolver never finds
+one — use `AtlasRb::Compilation.find` for those. That makes `nil` ambiguous
+here: it means "no such id" **or** "that id names a Compilation".
+
 ### Batch resolve (`Resource.find_many`)
 
 When you have a *set* of NOIDs and only need each one's title / klass /
