@@ -277,18 +277,18 @@ radius and the kind of authentication they need:
 
 | Namespace            | What it does                                                                       | Auth                                                | Friction                              |
 |----------------------|------------------------------------------------------------------------------------|-----------------------------------------------------|---------------------------------------|
-| `AtlasRb::*`         | Regular CRUD (find / list / create / update / tombstone / metadata, etc.)          | Relay-signing (signed assertion, `sub` = acting NUID) | None — these are the daily-use paths. |
-| `AtlasRb::Admin::*`  | Hard delete (`destroy`) and un-tombstone (`restore`) for Work / Collection / Community. | Same as regular — a real operator is acting.        | `destroy` requires `confirm: :i_understand`. |
+| `AtlasRb::*`         | Regular CRUD — typed reads and `create`, plus every type-agnostic write on `Resource`. | Relay-signing (signed assertion, `sub` = acting NUID) | None — these are the daily-use paths. |
+| `AtlasRb::Admin::*`  | Hard delete (`destroy`) and un-tombstone (`restore`), on `Admin::Resource`.         | Same as regular — a real operator is acting.        | `destroy` requires `confirm: :i_understand`. |
 | `AtlasRb::System::*` | System-context provisioning (currently just SSO user find-or-create).              | System token (`Rails.application.credentials.atlas_system_token`) + `User: NUID 000000000`. | The namespace itself is the marker — there is no way to call these as a non-system principal. |
 
 ```ruby
 # Regular daily use — picks up Current.nuid via the configured default:
-AtlasRb::Work.find("w-789")
-AtlasRb::Work.tombstone("w-789")     # withdrawal (reversible)
+AtlasRb::Work.find("w-789")              # typed read
+AtlasRb::Resource.tombstone("w-789")     # withdrawal (reversible), any type
 
 # Operator-only, with a friction marker:
-AtlasRb::Admin::Work.destroy("w-789", confirm: :i_understand)
-AtlasRb::Admin::Work.restore("w-789")
+AtlasRb::Admin::Resource.destroy("w-789", confirm: :i_understand)
+AtlasRb::Admin::Resource.restore("w-789")
 
 # System-only — authenticates as Atlas's :system fixture:
 AtlasRb::System::User.find_or_create(
@@ -531,6 +531,59 @@ The two mutations raise the same way `reparent` does — `LinkedMemberError`
 on a structural `422` (carrying the envelope's `error` code as `#code`) and
 `ForbiddenError` on a `403` — instead of swallowing the envelope.
 
+### Writing without knowing the type
+
+Atlas serves the reads as sub-resources of `/resources/{id}` and serves the
+writes as verbs on those same paths, so a caller holding a NOID and no type can
+write. The whole surface:
+
+| Call | Endpoint |
+|---|---|
+| `Resource.put_mods(id, xml_path, origin:)` | `PUT /resources/{id}/mods` |
+| `Resource.set_permissions(id, acl)` | `PATCH /resources/{id}/permissions` |
+| `Resource.set_thumbnails(id, thumbnail:, thumbnail_2x:, preview:)` | `PATCH /resources/{id}/thumbnails` |
+| `Resource.reparent(id, parent_id)` | `PATCH /resources/{id}/parent` |
+| `Resource.tombstone(id)` | `POST /resources/{id}/tombstone` |
+| `Admin::Resource.restore(id)` | `POST /resources/{id}/restore` |
+| `Admin::Resource.destroy(id, confirm: :i_understand)` | `DELETE /resources/{id}` |
+
+```ruby
+AtlasRb::Resource.put_mods("xsj3xmz", "/tmp/work.xml", origin: "xml_editor")
+AtlasRb::Resource.set_permissions("xsj3xmz", { "read" => ["public"] })
+```
+
+**There are no typed counterparts.** One URL serves every type, so a typed
+write would name a type it could not enforce — `Work.set_permissions` given a
+Collection id would succeed. The subclasses still *answer* these methods,
+because they inherit them from `Resource`, but calling one on a subclass is the
+same call and checks nothing. That was already true of the generic reads;
+`Resource.find` is what reports a type.
+
+**The ACL merges per key.** A key you omit keeps its stored value, and a key
+sent explicitly empty is cleared. So changing one slot no longer means reading
+the whole envelope and writing it back to avoid erasing a field you never meant
+to touch.
+
+```ruby
+# publishes, and leaves the embargo, edit groups and depositor alone
+AtlasRb::Resource.set_permissions(id, { "read" => ["public"] })
+```
+
+**MODS is a PUT because the caller assembles the whole document** — descriptive
+merge logic lives in the client, not in Atlas. A type that holds no MODS
+answers `404`, exactly as the `GET` on that path does; the gem does not
+pre-check, so Atlas stays the one enforcer.
+
+A write returns the resource **unwrapped** from its type key, since the caller
+of a type-agnostic write has no key to index by. `tombstone`, `restore` and
+`destroy` return the raw `Faraday::Response`: Atlas answers a refused tombstone
+with `422 has_live_children`, which is an answer to read rather than an error
+to raise on.
+
+Writes that address something only one type has stay typed — `create`, the
+Work-only lifecycle and derivative writes, `Collection.set_featured`, and the
+FileSet, Blob and Compilation writes.
+
 ### Resolving one id of unknown type (`Resource.find` and `Resource.class_for`)
 
 When a NOID arrives as runtime data and you do not know its type, resolve
@@ -637,16 +690,16 @@ written to prevent:
 
 ```ruby
 begin
-  AtlasRb::Work.update("doesnotexist", "/tmp/mods.xml")
+  AtlasRb::Resource.put_mods("doesnotexist", "/tmp/mods.xml")
 rescue AtlasRb::NotFoundError => e
   e.status    # => 404
-  e.message   # => "PATCH /works/doesnotexist → 404 (no such resource)"
+  e.message   # => "PUT /resources/doesnotexist/mods → 404 (no such resource)"
 end
 ```
 
-This covers every `create` / `update` / `metadata` / `parent` / `rollback` and
-their siblings on `Work`, `Collection`, `Community`, `Blob`, `FileSet`,
-`Compilation` and `Person`. Any other non-2xx a write gets raises
+This covers every write: `create` and the type-specific writes on `Work`,
+`Collection`, `Blob`, `FileSet`, `Compilation` and `Person`, and the
+type-agnostic ones on `Resource`. Any other non-2xx a write gets raises
 `AtlasRb::ResourceError`, which `NotFoundError` subclasses — so a caller that
 only wants "the write failed" rescues the parent.
 
@@ -668,7 +721,7 @@ Refused writes raise on **every** binding and **every** path:
 
 ```ruby
 begin
-  AtlasRb::Work.update("w-789", metadata)
+  AtlasRb::Resource.set_permissions("w-789", { "read" => ["public"] })
 rescue AtlasRb::ReadOnlyModeError => e
   e.retry_after  # => 900 (seconds, from Atlas's Retry-After header)
   e.message      # => "Atlas is in maintenance mode; writes are refused"

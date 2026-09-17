@@ -84,7 +84,9 @@ module AtlasRb
       ))["collection"]
       return result if xml_path.to_s.empty?
 
-      update(result["id"], xml_path, nuid: nuid, on_behalf_of: on_behalf_of)
+      # The MODS seed is a second call: create takes the parent and the
+      # provenance slots, and the document goes through the write that owns it.
+      AtlasRb::Resource.put_mods(result["id"], xml_path, nuid: nuid, on_behalf_of: on_behalf_of)
       find(result["id"], nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
@@ -112,69 +114,6 @@ module AtlasRb
         connection({ featured: featured }, nuid, on_behalf_of: on_behalf_of)
           .patch(ROUTE + id + '/featured')
       ))["collection"]
-    end
-
-    # Move a Collection to a different parent (Community or Collection).
-    #
-    # Wraps `PATCH /collections/<id>/parent` with a `parent_id` of the new
-    # parent. Atlas re-parents the Collection and synchronously cascades
-    # the ancestry index over its Works; the structural rules (type, cycle,
-    # tombstone guards) are enforced server-side and surface as a `422`.
-    #
-    # Mirrors {.create}'s "single parent id" shape — same kwarg threading,
-    # the only difference is the verb and that the Collection already exists.
-    #
-    # @param id [String] the Collection ID to move.
-    # @param new_parent_id [String] the destination Community or Collection ID.
-    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
-    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
-    #   path it is ignored (identity lives in the token).
-    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
-    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
-    #   omitted.
-    # @return [Hash] the updated `"collection"` object, already unwrapped —
-    #   the same shape {.find} returns, reflecting the new `a_member_of`.
-    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
-    #   conflict that exhausted its internal retry budget (HTTP 409 with
-    #   `error: "stale_resource"`).
-    # @raise [AtlasRb::ReparentError] if Atlas rejects the move on structural
-    #   grounds (HTTP 422 — `cycle`, `invalid_parent_type`, `tombstoned_node`,
-    #   `tombstoned_parent`, `parent_required`, `parent_not_found`). The
-    #   envelope's `error` code is exposed as `#code`.
-    # @raise [AtlasRb::ForbiddenError] if Atlas refuses the move on
-    #   authorization grounds (HTTP 403).
-    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
-    #   resource, so the write did not happen.
-    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
-    #   and body.
-    #
-    # @example
-    #   AtlasRb::Collection.reparent("col-456", "c-999")
-    def self.reparent(id, new_parent_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Resource.reparent(id, new_parent_id,
-                                 nuid: nuid, on_behalf_of: on_behalf_of)["collection"]
-    end
-
-    # Tombstone (withdraw) a Collection.
-    #
-    # The Collection remains in Atlas storage but is marked as withdrawn:
-    # search and show pages return a withdrawn stub for every user. Atlas
-    # rejects the request with `422 has_live_children` if the Collection
-    # still has live (non-tombstoned) Works.
-    #
-    # @param id [String] the Collection ID.
-    # @param nuid [String] the acting user's NUID, stamped on the resource
-    #   as `tombstoned_by` for audit purposes.
-    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
-    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
-    #   omitted.
-    # @return [Faraday::Response] the raw response. `200`/`204` on success;
-    #   `422` with `{"code":"has_live_children"}` if the Collection is not empty.
-    #
-    # @example
-    #   AtlasRb::Collection.tombstone("col-456", nuid: "000000002")
-    def self.tombstone(id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Resource.tombstone(id, nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # List the Works in a Collection.
@@ -207,97 +146,6 @@ module AtlasRb
     #   # => ["w-789", "w-790"]
     def self.children(id, nuid: nil, on_behalf_of: nil)
       read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/children'))
-    end
-
-    # Replace a Collection's metadata by uploading a MODS XML document.
-    #
-    # @param id [String] the Collection ID.
-    # @param xml_path [String] path to a MODS XML file on disk.
-    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
-    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
-    #   path it is ignored (identity lives in the token).
-    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
-    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
-    #   omitted.
-    # @param origin [String, nil] free-text tag naming the surface that made this
-    #   edit (e.g. `"metadata_form"`, `"xml_editor"`). Atlas records it verbatim
-    #   on the audit event; omit it and the event carries no origin.
-    # @return [Hash] the parsed JSON response from the patch.
-    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
-    #   resource, so the write did not happen.
-    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
-    #   and body.
-    #
-    # @example
-    #   AtlasRb::Collection.update("col-456", "/tmp/collection-mods.xml")
-    #
-    # @example Recording which editing surface made the change
-    #   AtlasRb::Collection.update("col-456", "/tmp/collection-mods.xml", origin: "xml_editor")
-    def self.update(id, xml_path, nuid: nil, on_behalf_of: nil, origin: nil)
-      AtlasRb::Resource.put_mods(id, xml_path, nuid: nuid, on_behalf_of: on_behalf_of, origin: origin)
-    end
-
-    # Patch individual descriptive-metadata fields without uploading a
-    # full MODS document.
-    #
-    # Scoped to user-authored descriptive metadata only. Programmatic
-    # writes of machine-set Delegate URIs (thumbnails) have their own
-    # purpose-specific endpoint — see {.set_thumbnails}.
-    #
-    # @param id [String] the Collection ID.
-    # @param values [Hash] field-level metadata updates.
-    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
-    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
-    #   path it is ignored (identity lives in the token).
-    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
-    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
-    #   omitted.
-    # @return [Hash] the parsed JSON response.
-    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
-    #   resource, so the write did not happen.
-    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
-    #   and body.
-    #
-    # @example
-    #   AtlasRb::Collection.metadata("col-456", title: "Renamed Collection")
-    def self.metadata(id, values, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Resource.set_permissions(id, values.fetch("permissions") { values.fetch(:permissions) },
-                                        nuid: nuid, on_behalf_of: on_behalf_of)
-    end
-
-    # Attach the three thumbnail/preview Delegate URIs to a Collection.
-    #
-    # Collection-level mirror of {Work.set_thumbnails}. Atlas dispatches
-    # each non-blank URI to its matching Delegate role
-    # (`thumbnail_image` / `thumbnail_image_2x` / `preview_image`) via
-    # `DelegateUpdater`. Missing keys are left untouched.
-    #
-    # @param id [String] the Collection ID.
-    # @param thumbnail [String, nil] IIIF URI for the ~85² thumbnail.
-    # @param thumbnail_2x [String, nil] IIIF URI for the ~170² 2x thumbnail.
-    # @param preview [String, nil] IIIF URI for the ~500w preview image.
-    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
-    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
-    #   path it is ignored (identity lives in the token).
-    # @return [AtlasRb::Mash] the parsed JSON response.
-    # @raise [AtlasRb::StaleResourceError] if Atlas reports an optimistic-lock
-    #   conflict that exhausted its internal retry budget (HTTP 409 with
-    #   `error: "stale_resource"`).
-    # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
-    #   resource, so the write did not happen.
-    # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
-    #   and body.
-    #
-    # @example
-    #   AtlasRb::Collection.set_thumbnails(
-    #     "col-456",
-    #     thumbnail:    "https://iiif.example.edu/iiif/3/c.jp2/full/!85,85/0/default.jpg",
-    #     thumbnail_2x: "https://iiif.example.edu/iiif/3/c.jp2/full/!170,170/0/default.jpg",
-    #     preview:      "https://iiif.example.edu/iiif/3/c.jp2/full/500,/0/default.jpg"
-    #   )
-    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Resource.set_thumbnails(id, thumbnail: thumbnail, thumbnail_2x: thumbnail_2x,
-                                       preview: preview, nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # Fetch the Collection's MODS representation in the requested format.

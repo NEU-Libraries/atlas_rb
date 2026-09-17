@@ -1,5 +1,69 @@
 # Changelog
 
+## 1.18.0
+
+### Changed — the write surface is type-agnostic, and the typed writes are gone
+
+Atlas moved every write that needs no type onto the `/resources/{id}`
+sub-resource that already served its `GET`, so the gem follows. Seven methods
+replace twenty-one:
+
+| Was | Is |
+|---|---|
+| `Work.update` / `Collection.update` / `Community.update` | `Resource.put_mods` |
+| `.metadata` ×3 | `Resource.set_permissions` |
+| `.set_thumbnails` ×3 | `Resource.set_thumbnails` |
+| `.reparent` ×3 | `Resource.reparent` |
+| `.tombstone` ×3 | `Resource.tombstone` |
+| `Admin::{Work,Collection,Community}.restore` | `Admin::Resource.restore` |
+| `Admin::{Work,Collection,Community}.destroy` | `Admin::Resource.destroy` |
+
+`AtlasRb::Admin::Work`, `::Collection` and `::Community` are **removed** —
+purge and restore were all they held.
+
+**Why not keep the typed names as delegators.** One URL now serves every type,
+so `Work.set_permissions(collection_id)` would succeed: the class would name a
+type it could not enforce. A method that cannot keep its own promise is worse
+than no method. Note that the subclasses still *answer* the generic writes,
+because they inherit them from `Resource` — that was already true of the
+generic reads (`history`, `permissions`, `find_many`), and `Resource.find`
+remains the call that reports a type.
+
+**`update` and `metadata` are not carried forward under any name.** Neither
+said which document it wrote: `update` was the MODS upload and `metadata` was
+the ACL. `Resource.mods` and `Resource.permissions` were already taken by the
+reads, so the writes take `put_mods` and `set_permissions` rather than
+overloading a name by arity on the ACL surface.
+
+### Changed — a generic write returns the resource unwrapped
+
+Atlas answers a write with the resource under its type key. A caller of a
+type-agnostic write does not know that key, so the gem unwraps it: `put_mods`,
+`set_permissions`, `set_thumbnails` and `reparent` return the resource itself.
+
+That also settles an inconsistency the typed methods carried — `reparent`
+unwrapped, `update` and `metadata` did not.
+
+`tombstone`, `Admin::Resource.restore` and `Admin::Resource.destroy` still
+return the raw `Faraday::Response`. Atlas answers a refused tombstone with
+`422 has_live_children`, which is a legitimate answer the caller reads rather
+than an error to raise on.
+
+### Changed — `Collection.set_featured` has its own path
+
+`PATCH /collections/{id}` had a **third** payload shape beside MODS and the
+ACL: the showcase `featured` flag. It is Collection-only, so it keeps its type
+and moves to `PATCH /collections/{id}/featured`. The binding signature is
+unchanged.
+
+### Kept per-type, on purpose
+
+`create` (it must name what to create), the Work-only writes (`complete`,
+`mark_incomplete`, `clear_incomplete`, `set_image_derivatives`,
+`set_derivative_permissions`, `set_full_text`, the linked-member and
+association pairs), `Collection.set_featured`, and every FileSet, Blob and
+Compilation write. Each addresses something only its own type has.
+
 ## 1.17.0
 
 ### Fixed — `Resource.find` emitted a type string this namespace cannot resolve

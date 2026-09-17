@@ -10,10 +10,11 @@ module AtlasRb
   #
   # ## Why a separate namespace
   #
-  # The class itself is the marker: `AtlasRb::Admin::Work.destroy(...)`
-  # is structurally distinct from `AtlasRb::Work.update(...)`. Mass-edits
-  # and code-search across a consumer codebase can quickly find every
-  # destructive call site by grepping `AtlasRb::Admin::`.
+  # The namespace itself is the marker: `AtlasRb::Admin::Resource.destroy(...)`
+  # is structurally distinct from every other write. Mass-edits and code-search
+  # across a consumer codebase can find every destructive call site by grepping
+  # `AtlasRb::Admin::`. That is also why purge did not move onto
+  # {AtlasRb::Resource} beside the other type-agnostic writes.
   #
   # ## `confirm: :i_understand`
   #

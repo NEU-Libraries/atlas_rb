@@ -17,6 +17,13 @@ module AtlasRb
   # Atlas refuses a type that cannot take the write; the gem does not
   # pre-check. A MODS write aimed at a FileSet answers `404`, the same as the
   # `GET` on that path.
+  #
+  # **There are no typed counterparts.** One URL serves every type, so a typed
+  # write would name a type it could not enforce. The subclasses still *answer*
+  # these methods, because they inherit them — `AtlasRb::Work.tombstone(id)` is
+  # the same call as `AtlasRb::Resource.tombstone(id)`, and neither checks that
+  # `id` names a Work. That has always been true of the generic reads too;
+  # {Resource.find} is the call that reports a type.
   class Resource
     # Replace a resource's MODS document.
     #
@@ -34,7 +41,7 @@ module AtlasRb
     #   omitted.
     # @param origin [String, nil] the editing surface to record on the audit
     #   event, e.g. `"xml_editor"`. Omitted from the body when nil.
-    # @return [AtlasRb::Mash] the parsed JSON response, keyed by resource type.
+    # @return [AtlasRb::Mash] the resource, unwrapped from its type key.
     # @raise [AtlasRb::NotFoundError] on `404` — no such id, or a type that
     #   holds no MODS. The write did not happen either way.
     # @raise [AtlasRb::StaleResourceError] on an optimistic-lock conflict.
@@ -43,10 +50,10 @@ module AtlasRb
     # @example
     #   AtlasRb::Resource.put_mods("xsj3xmz", "/tmp/work.xml", origin: "xml_editor")
     def self.put_mods(id, xml_path, nuid: nil, on_behalf_of: nil, origin: nil)
-      AtlasRb::Mash.new(write_resource(
-                          multipart(nuid, on_behalf_of: on_behalf_of)
-                            .put('/resources/' + id + '/mods', mods_upload_payload(xml_path, origin))
-                        ))
+      unwrap(write_resource(
+               multipart(nuid, on_behalf_of: on_behalf_of)
+                 .put('/resources/' + id + '/mods', mods_upload_payload(xml_path, origin))
+             ))
     end
 
     # Adjust a resource's ACL.
@@ -61,7 +68,7 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID.
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header.
-    # @return [AtlasRb::Mash] the parsed JSON response, keyed by resource type.
+    # @return [AtlasRb::Mash] the resource, unwrapped from its type key.
     # @raise [AtlasRb::NotFoundError] on `404` — the write did not happen.
     # @raise [AtlasRb::ResourceError] on any other non-2xx, including the `403`
     #   Atlas answers when a caller tries to remove a grant for a group it does
@@ -70,10 +77,10 @@ module AtlasRb
     # @example Publish, leaving every other key alone
     #   AtlasRb::Resource.set_permissions("xsj3xmz", { "read" => ["public"] })
     def self.set_permissions(id, values, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(write_resource(
-                          connection({ permissions: values }, nuid, on_behalf_of: on_behalf_of)
-                            .patch('/resources/' + id + '/permissions')
-                        ))
+      unwrap(write_resource(
+               connection({ permissions: values }, nuid, on_behalf_of: on_behalf_of)
+                 .patch('/resources/' + id + '/permissions')
+             ))
     end
 
     # Attach the three thumbnail-family IIIF Delegate URIs to a resource.
@@ -87,16 +94,16 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID.
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header.
-    # @return [AtlasRb::Mash] the parsed JSON response, keyed by resource type.
+    # @return [AtlasRb::Mash] the resource, unwrapped from its type key.
     # @raise [AtlasRb::NotFoundError] on `404` — the write did not happen.
     # @raise [AtlasRb::StaleResourceError] on an optimistic-lock conflict.
     # @raise [AtlasRb::ResourceError] on any other non-2xx.
     def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil, on_behalf_of: nil)
       body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
-      AtlasRb::Mash.new(write_resource(
-                          connection({}, nuid, on_behalf_of: on_behalf_of)
-                            .patch('/resources/' + id + '/thumbnails', JSON.dump(body))
-                        ))
+      unwrap(write_resource(
+               connection({}, nuid, on_behalf_of: on_behalf_of)
+                 .patch('/resources/' + id + '/thumbnails', JSON.dump(body))
+             ))
     end
 
     # Move a resource under a different parent.
@@ -110,15 +117,15 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID.
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header.
-    # @return [AtlasRb::Mash] the parsed JSON response, keyed by resource type.
+    # @return [AtlasRb::Mash] the resource, unwrapped from its type key.
     # @raise [AtlasRb::NotFoundError] on `404` — the write did not happen.
     # @raise [AtlasRb::ResourceError] on any other non-2xx, including the `422`
     #   Atlas answers for an unresolvable destination or a containment refusal.
     def self.reparent(id, new_parent_id = nil, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(write_resource(
-                          connection({ parent_id: new_parent_id }, nuid, on_behalf_of: on_behalf_of)
-                            .patch('/resources/' + id + '/parent')
-                        ))
+      unwrap(write_resource(
+               connection({ parent_id: new_parent_id }, nuid, on_behalf_of: on_behalf_of)
+                 .patch('/resources/' + id + '/parent')
+             ))
     end
 
     # Restore is the operator's counterpart and lives in
@@ -140,5 +147,14 @@ module AtlasRb
     def self.tombstone(id, nuid: nil, on_behalf_of: nil)
       connection({}, nuid, on_behalf_of: on_behalf_of).post('/resources/' + id + '/tombstone')
     end
+
+    # Atlas answers a write with the resource under its type key, matching what
+    # `GET /{type}/{id}` returns. The caller of a type-agnostic write does not
+    # know that key, so it is unwrapped here rather than left for them to
+    # guess -- {Resource.find} is the call that reports a type.
+    def self.unwrap(body)
+      AtlasRb::Mash.new(body).values.first
+    end
+    private_class_method :unwrap
   end
 end
