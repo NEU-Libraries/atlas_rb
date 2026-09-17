@@ -109,7 +109,8 @@ module AtlasRb
     #   AtlasRb::Collection.set_featured("col-456", true)
     def self.set_featured(id, featured, nuid: nil, on_behalf_of: nil)
       AtlasRb::Mash.new(write_resource(
-        connection({ featured: featured }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)
+        connection({ featured: featured }, nuid, on_behalf_of: on_behalf_of)
+          .patch(ROUTE + id + '/featured')
       ))["collection"]
     end
 
@@ -150,10 +151,8 @@ module AtlasRb
     # @example
     #   AtlasRb::Collection.reparent("col-456", "c-999")
     def self.reparent(id, new_parent_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(write_resource(
-        connection({ parent_id: new_parent_id }, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/parent')
-      ))["collection"]
+      AtlasRb::Resource.reparent(id, new_parent_id,
+                                 nuid: nuid, on_behalf_of: on_behalf_of)["collection"]
     end
 
     # Tombstone (withdraw) a Collection.
@@ -175,7 +174,7 @@ module AtlasRb
     # @example
     #   AtlasRb::Collection.tombstone("col-456", nuid: "000000002")
     def self.tombstone(id, nuid: nil, on_behalf_of: nil)
-      connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/tombstone')
+      AtlasRb::Resource.tombstone(id, nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # List the Works in a Collection.
@@ -235,10 +234,7 @@ module AtlasRb
     # @example Recording which editing surface made the change
     #   AtlasRb::Collection.update("col-456", "/tmp/collection-mods.xml", origin: "xml_editor")
     def self.update(id, xml_path, nuid: nil, on_behalf_of: nil, origin: nil)
-      AtlasRb::Mash.new(write_resource(
-        multipart(nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id, mods_upload_payload(xml_path, origin))
-      ))
+      AtlasRb::Resource.put_mods(id, xml_path, nuid: nuid, on_behalf_of: on_behalf_of, origin: origin)
     end
 
     # Patch individual descriptive-metadata fields without uploading a
@@ -265,9 +261,8 @@ module AtlasRb
     # @example
     #   AtlasRb::Collection.metadata("col-456", title: "Renamed Collection")
     def self.metadata(id, values, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(write_resource(
-        connection({ metadata: values }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)
-      ))
+      AtlasRb::Resource.set_permissions(id, values.fetch("permissions") { values.fetch(:permissions) },
+                                        nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # Attach the three thumbnail/preview Delegate URIs to a Collection.
@@ -301,11 +296,8 @@ module AtlasRb
     #     preview:      "https://iiif.example.edu/iiif/3/c.jp2/full/500,/0/default.jpg"
     #   )
     def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil, on_behalf_of: nil)
-      body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
-      AtlasRb::Mash.new(write_resource(
-        connection({}, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/thumbnails', JSON.dump(body))
-      ))
+      AtlasRb::Resource.set_thumbnails(id, thumbnail: thumbnail, thumbnail_2x: thumbnail_2x,
+                                       preview: preview, nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # Fetch the Collection's MODS representation in the requested format.

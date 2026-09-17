@@ -43,7 +43,7 @@ module AtlasRb
           raise ArgumentError,
                 "AtlasRb::Admin::Work.destroy requires confirm: :i_understand"
         end
-        connection({}, nuid, on_behalf_of: on_behalf_of).delete(ROUTE + id)
+        AtlasRb::Admin::Resource.destroy(id, confirm: confirm, nuid: nuid, on_behalf_of: on_behalf_of)
       end
 
       # Restore a previously-tombstoned Work.
@@ -64,7 +64,7 @@ module AtlasRb
       # @example
       #   AtlasRb::Admin::Work.restore("w-789")
       def self.restore(id, nuid: nil, on_behalf_of: nil)
-        connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/restore')
+        AtlasRb::Admin::Resource.restore(id, nuid: nuid, on_behalf_of: on_behalf_of)
       end
     end
   end

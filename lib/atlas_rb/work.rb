@@ -192,10 +192,8 @@ module AtlasRb
     # @example
     #   AtlasRb::Work.reparent("w-789", "col-999")
     def self.reparent(id, new_collection_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(write_resource(
-        connection({ parent_id: new_collection_id }, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/parent')
-      ))["work"]
+      AtlasRb::Resource.reparent(id, new_collection_id,
+                                 nuid: nuid, on_behalf_of: on_behalf_of)["work"]
     end
 
     # Tombstone (withdraw) a Work.
@@ -217,7 +215,7 @@ module AtlasRb
     # @example
     #   AtlasRb::Work.tombstone("w-789", nuid: "000000002")
     def self.tombstone(id, nuid: nil, on_behalf_of: nil)
-      connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/tombstone')
+      AtlasRb::Resource.tombstone(id, nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # Mark a Work complete.
@@ -373,10 +371,7 @@ module AtlasRb
     # @example Recording which editing surface made the change
     #   AtlasRb::Work.update("w-789", "/tmp/work-mods.xml", origin: "xml_editor")
     def self.update(id, xml_path, nuid: nil, on_behalf_of: nil, origin: nil)
-      AtlasRb::Mash.new(write_resource(
-        multipart(nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id, mods_upload_payload(xml_path, origin))
-      ))
+      AtlasRb::Resource.put_mods(id, xml_path, nuid: nuid, on_behalf_of: on_behalf_of, origin: origin)
     end
 
     # Patch individual descriptive-metadata fields without uploading a
@@ -404,9 +399,8 @@ module AtlasRb
     # @example
     #   AtlasRb::Work.metadata("w-789", title: "Revised Title")
     def self.metadata(id, values, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(write_resource(
-        connection({ metadata: values }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)
-      ))
+      AtlasRb::Resource.set_permissions(id, values.fetch("permissions") { values.fetch(:permissions) },
+                                        nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # Attach the three thumbnail/preview Delegate URIs to a Work.
@@ -442,11 +436,8 @@ module AtlasRb
     #     preview:      "https://iiif.example.edu/iiif/3/abc.jp2/full/500,/0/default.jpg"
     #   )
     def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil, on_behalf_of: nil)
-      body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
-      AtlasRb::Mash.new(write_resource(
-        connection({}, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/thumbnails', JSON.dump(body))
-      ))
+      AtlasRb::Resource.set_thumbnails(id, thumbnail: thumbnail, thumbnail_2x: thumbnail_2x,
+                                       preview: preview, nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # Attach the three image-derivative Delegate URIs to a Work.

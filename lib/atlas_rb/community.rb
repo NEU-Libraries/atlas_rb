@@ -128,10 +128,8 @@ module AtlasRb
     # @example Promote to a top-level Community
     #   AtlasRb::Community.reparent("c-123", nil)
     def self.reparent(id, new_parent_id, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(write_resource(
-        connection({ parent_id: new_parent_id }, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/parent')
-      ))["community"]
+      AtlasRb::Resource.reparent(id, new_parent_id,
+                                 nuid: nuid, on_behalf_of: on_behalf_of)["community"]
     end
 
     # Tombstone (withdraw) a Community.
@@ -153,7 +151,7 @@ module AtlasRb
     # @example
     #   AtlasRb::Community.tombstone("c-123", nuid: "000000002")
     def self.tombstone(id, nuid: nil, on_behalf_of: nil)
-      connection({}, nuid, on_behalf_of: on_behalf_of).post(ROUTE + id + '/tombstone')
+      AtlasRb::Resource.tombstone(id, nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # List the immediate children (sub-Communities and Collections) of a Community.
@@ -214,10 +212,7 @@ module AtlasRb
     # @example Recording which editing surface made the change
     #   AtlasRb::Community.update("c-123", "/tmp/community-mods.xml", origin: "xml_editor")
     def self.update(id, xml_path, nuid: nil, on_behalf_of: nil, origin: nil)
-      AtlasRb::Mash.new(write_resource(
-        multipart(nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id, mods_upload_payload(xml_path, origin))
-      ))
+      AtlasRb::Resource.put_mods(id, xml_path, nuid: nuid, on_behalf_of: on_behalf_of, origin: origin)
     end
 
     # Patch individual descriptive-metadata fields without uploading a
@@ -245,9 +240,8 @@ module AtlasRb
     # @example
     #   AtlasRb::Community.metadata("c-123", title: "New Name")
     def self.metadata(id, values, nuid: nil, on_behalf_of: nil)
-      AtlasRb::Mash.new(write_resource(
-        connection({ metadata: values }, nuid, on_behalf_of: on_behalf_of).patch(ROUTE + id)
-      ))
+      AtlasRb::Resource.set_permissions(id, values.fetch("permissions") { values.fetch(:permissions) },
+                                        nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # Attach the three thumbnail/preview Delegate URIs to a Community.
@@ -281,11 +275,8 @@ module AtlasRb
     #     preview:      "https://iiif.example.edu/iiif/3/m.jp2/full/500,/0/default.jpg"
     #   )
     def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil, on_behalf_of: nil)
-      body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
-      AtlasRb::Mash.new(write_resource(
-        connection({}, nuid, on_behalf_of: on_behalf_of)
-          .patch(ROUTE + id + '/thumbnails', JSON.dump(body))
-      ))
+      AtlasRb::Resource.set_thumbnails(id, thumbnail: thumbnail, thumbnail_2x: thumbnail_2x,
+                                       preview: preview, nuid: nuid, on_behalf_of: on_behalf_of)
     end
 
     # Fetch the Community's MODS representation in the requested format.
