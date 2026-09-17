@@ -33,6 +33,8 @@ require_relative "atlas_rb/blob"
 require_relative "atlas_rb/delegate"
 require_relative "atlas_rb/compilation"
 require_relative "atlas_rb/person"
+# Must follow every Resource subclass above: it names them in a map.
+require_relative "atlas_rb/resource_types"
 require_relative "atlas_rb/user"
 require_relative "atlas_rb/admin"
 require_relative "atlas_rb/admin/work"
