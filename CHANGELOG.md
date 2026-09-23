@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.19.0
+
+### Added — `Resource.search`, the catalog keyword search
+
+```ruby
+AtlasRb::Resource.search("whaling logbook", type: "Work", page: 1, per_page: 25)
+# => Mash with "results" and "pagination"
+```
+
+Binds `GET /resources/search`, which needs Atlas 0.6.199 or later. It is
+Cerberus's search bar for a caller without Blacklight: the same field weights,
+because both come from the Solr core's search handler, and the same filters for
+the global catalog. It returns the whole envelope, as `descendant_works` does, so
+a caller pages with `pagination.pages`.
+
+Each row is a Solr digest, and `klass` is a name `Resource.class_for` accepts, so
+loading the full resource is `class_for(hit.klass).find(hit.noid)`.
+
+One difference from Cerberus is deliberate. Atlas gates the rows as its own
+`Ability` reads a resource, so an edit group and the depositor count as well as a
+read group. Cerberus's search still checks read groups only, so for staff and
+depositors this can return items that Cerberus's search does not. Every such item
+is one the user can already open.
+
 ## 1.18.0
 
 ### Changed — the write surface is type-agnostic, and the typed writes are gone

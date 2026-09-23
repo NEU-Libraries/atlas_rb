@@ -155,6 +155,55 @@ module AtlasRb
                   .get('/resources/' + id + '/descendant_works')) { |body| AtlasRb::Mash.new(body) }
     end
 
+    # Keyword search over the catalog, as Cerberus's search bar searches it.
+    #
+    # Searches Works, Collections, Communities and People, most relevant
+    # first, and returns one page. Atlas gates every row to what the acting
+    # user may read — public, one of their read or edit groups, or a resource
+    # they deposited — so two users can get different results for the same
+    # text. Tombstoned resources, featured Collections, personal roots and
+    # unfinished deposits (except the caller's own) never appear.
+    #
+    # Each row is a digest read off Solr, not a resource: `{ "id", "noid",
+    # "klass", "title", "creators", "year", "thumbnail", "in_progress",
+    # "embargoed", "incomplete" }`. `klass` is one of the four type names
+    # above, which {class_for} accepts, so a caller loads the full resource
+    # with `class_for(hit.klass).find(hit.noid)`.
+    #
+    # @param query [String, nil] the search text. Omit or pass blank to browse
+    #   everything the user may read, newest first.
+    # @param type [String, nil] one of `"Work"`, `"Collection"`, `"Community"`,
+    #   `"Person"`, to narrow the search to that type.
+    # @param page [Integer, nil] 1-based page (default 1 server-side).
+    # @param per_page [Integer, nil] page size (server default 25, capped 100).
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when omitted.
+    # @return [AtlasRb::Mash] the parsed envelope, with a `"results"` digest
+    #   array and a `"pagination"` block (`total` / `page` / `per_page` / `pages`).
+    #
+    # @raise [AtlasRb::ResourceError] on any non-2xx — a `400` for an unknown
+    #   `type`, an auth envelope, a `5xx` — carrying Atlas's status and body.
+    # @example Find a Work by a word in its title, then load it
+    #   result = AtlasRb::Resource.search("whaling logbook", type: "Work")
+    #   hit    = result.results.first
+    #   AtlasRb::Resource.class_for(hit.klass).find(hit.noid)
+    # @example Page through every match
+    #   (1..AtlasRb::Resource.search("whaling").pagination.pages).flat_map do |page|
+    #     AtlasRb::Resource.search("whaling", page: page).results
+    #   end
+    def self.search(query = nil, type: nil, page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
+      params = {}
+      params[:q]        = query    if query
+      params[:type]     = type     if type
+      params[:page]     = page     if page
+      params[:per_page] = per_page if per_page
+      read_body(connection(params, nuid, on_behalf_of: on_behalf_of)
+                  .get("/resources/search")) { |body| AtlasRb::Mash.new(body) }
+    end
+
     # Validate a MODS XML document against Atlas's schema *without* persisting it.
     #
     # Useful for surfacing validation errors in UIs before the user commits.

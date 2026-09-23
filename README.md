@@ -641,6 +641,31 @@ tombstoned resources come back flagged (`"tombstoned" => true`), so index
 by `"noid"` rather than assuming positional correspondence. NOIDs only —
 raw Valkyrie ids are not a supported input.
 
+### Searching the catalog (`Resource.search`)
+
+A keyword search, as Cerberus's search bar runs it, for a caller that has words
+rather than a NOID:
+
+```ruby
+result = AtlasRb::Resource.search("whaling logbook", type: "Work", per_page: 50)
+result.pagination.total                 # => 12
+hit = result.results.first
+hit.title                               # => "Whaling logbook, 1851"
+AtlasRb::Resource.class_for(hit.klass).find(hit.noid)
+```
+
+It searches Works, Collections, Communities and People, most relevant first.
+`type` narrows to one of those four; any other value is a `400`, raised as
+`AtlasRb::ResourceError`. Leave out the text to browse everything the user may
+read, newest first.
+
+Each row is a digest read off Solr — `{ "id", "noid", "klass", "title",
+"creators", "year", "thumbnail", "in_progress", "embargoed", "incomplete" }` —
+not the full typed payload. Rows are **gated to the acting user**: public, one of
+their read or edit groups, or a resource they deposited. So the same text can
+return different results for different users. There are no facets and no sort
+option.
+
 ### Missing resources: `nil` on a read, a raise on a write
 
 The two halves of the API answer an absent resource differently, on purpose.
