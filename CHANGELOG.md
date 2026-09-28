@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.20.0
+
+### Added — `System.release_embargoes`, recording lapsed embargoes
+
+```ruby
+AtlasRb::System.release_embargoes                          # => ["abc123"]
+AtlasRb::System.release_embargoes(since: Date.new(2026, 9, 1))
+```
+
+Binds `POST /embargoes/release`, which needs Atlas 0.6.208 or later. An embargo
+lapsing is not a write, so nothing records it unless someone asks. Atlas writes
+one `release_embargo` audit row per lapsed Work, dated to the start of the
+release day in Eastern time, and returns the NOIDs that gained one.
+
+Atlas runs no scheduler, so the consumer supplies the schedule; Cerberus calls
+this nightly. A repeat call writes nothing, and Atlas looks back seven days by
+default, so a missed night catches up on the next call. `since` widens that.
+It is a write, so it raises `ReadOnlyModeError` during a maintenance window.
+
 ## 1.19.0
 
 ### Added — `Resource.search`, the catalog keyword search

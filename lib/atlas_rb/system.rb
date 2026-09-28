@@ -54,5 +54,27 @@ module AtlasRb
       response = system_connection.post("/resources/#{id}/reindex_subtree")
       JSON.parse(response.body)["reindexed"]
     end
+
+    # Record the embargoes that have lapsed. Atlas writes one `release_embargo`
+    # audit row per lapsed Work, dated to the start of the release day in
+    # Eastern time rather than to the call. Atlas runs no scheduler, so the
+    # consumer calls this on its own schedule — Cerberus nightly.
+    #
+    # Idempotent: a repeat call writes nothing. Atlas looks back seven days by
+    # default, so a missed night catches up on the next call.
+    #
+    # @param since [Date, nil] the earliest release date to consider, to widen
+    #   the default seven-day window.
+    # @return [Array<String>] NOIDs of the Works that gained a row on this call.
+    # @raise [AtlasRb::ReadOnlyModeError] while a maintenance window is open.
+    #
+    # @example The nightly call
+    #   AtlasRb::System.release_embargoes              # => ["abc123"]
+    # @example Catch up after a long outage
+    #   AtlasRb::System.release_embargoes(since: Date.new(2026, 9, 1))
+    def self.release_embargoes(since: nil)
+      path = since ? "/embargoes/release?since=#{since.iso8601}" : "/embargoes/release"
+      JSON.parse(system_connection.post(path).body)["released"]
+    end
   end
 end
