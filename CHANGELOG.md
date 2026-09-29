@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.21.0
+
+### Added — `System::Work.remove_linked_member`, unlinking a showcase Work
+
+```ruby
+AtlasRb::System::Work.remove_linked_member(work_id, old_showcase_id, on_behalf_of: depositor_nuid)
+# => ["def456"]
+```
+
+The mirror of `System::Work.add_linked_member`, over the same system connection.
+It binds `DELETE /works/:id/linked_members/:collection_id`, which Atlas already
+serves. Atlas runs the same two checks as the add: the Collection must be
+featured, and `on_behalf_of` must own the Work. Otherwise it raises
+`ForbiddenError`.
+
+A depositor holds no `:link_member` grant, so `Work.remove_linked_member` works
+only for an admin. This binding lets Cerberus change a depositor's showcase
+category: remove the link to the old showcase, then add the link to the new one.
+
 ## 1.20.0
 
 ### Added — `System.release_embargoes`, recording lapsed embargoes

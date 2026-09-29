@@ -2,15 +2,15 @@
 
 module AtlasRb
   module System
-    # Showcase publishing: link a freshly-created Work into a depositor's
+    # Showcase publishing: link a depositor's Work into (or out of) a
     # featured showcase Collection on their behalf, without granting the
     # depositor themselves standing edit rights on that shared Collection.
     #
     # Atlas scopes this narrowly on both sides (see Atlas's `Ability`): the
     # target Collection must be `featured`, and the Work must belong to the
     # `on_behalf_of` NUID — never an arbitrary or private Work. Cerberus's
-    # `WorkDeposit#create_published` ("Publish to my community") is the one
-    # caller today.
+    # `WorkDeposit#create_published` ("Publish to my community") adds the link;
+    # changing a Work's showcase category swaps it with a remove and an add.
     #
     # Always authenticates via {FaradayHelper#system_connection}, so there is
     # no way to issue this as a regular user.
@@ -41,6 +41,35 @@ module AtlasRb
         JSON.parse(
           system_connection({ collection_id: collection_id }, on_behalf_of: on_behalf_of)
             .post("/works/#{work_id}/linked_members")&.body
+        )
+      end
+
+      # The mirror of {.add_linked_member}: unlink a depositor's Work from a
+      # featured showcase Collection on their behalf. Atlas applies the same
+      # two checks as the add, so a depositor can undo only a link they could
+      # have made.
+      #
+      # @param work_id [String] the Work ID to unlink.
+      # @param collection_id [String] the (must-be-featured) showcase
+      #   Collection to unlink the Work from.
+      # @param on_behalf_of [String] the depositor NUID this write is
+      #   attributed to; Atlas requires it to match the Work's depositor.
+      # @return [Array<String>] the Work's full set of linked Collection
+      #   noids after the remove.
+      # @raise [AtlasRb::StaleResourceError] optimistic-lock conflict.
+      # @raise [AtlasRb::LinkedMemberError] structural rejection (HTTP 422) —
+      #   e.g. the target Collection does not exist.
+      # @raise [AtlasRb::ForbiddenError] Atlas refused the unlink (HTTP 403) —
+      #   e.g. the target Collection isn't featured, or on_behalf_of doesn't
+      #   own the Work.
+      #
+      # @example Swapping a Work's showcase from Cerberus's Work Edit page
+      #   AtlasRb::System::Work.remove_linked_member(work.id, old_showcase.id, on_behalf_of: depositor_nuid)
+      #   AtlasRb::System::Work.add_linked_member(work.id, new_showcase.id, on_behalf_of: depositor_nuid)
+      def self.remove_linked_member(work_id, collection_id, on_behalf_of:)
+        JSON.parse(
+          system_connection({}, on_behalf_of: on_behalf_of)
+            .delete("/works/#{work_id}/linked_members/#{collection_id}")&.body
         )
       end
     end
