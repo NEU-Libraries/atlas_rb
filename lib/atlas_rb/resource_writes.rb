@@ -138,6 +138,12 @@ module AtlasRb
     # `has_live_children` — a legitimate answer the caller has to read, not an
     # error. Reversible via {.restore}.
     #
+    # Accepts a FileSet id as well as a Community, Collection or Work (Atlas
+    # 0.6.211 or later). That withdraws an attached file, such as a caption,
+    # reversibly: its Blobs ride along and it drops out of {Work.assets} and
+    # {Work.file_sets}. Atlas refuses a FileSet from anyone outside the admin and
+    # devolved-admin tiers with `403`, even a user who can edit the Work.
+    #
     # @param id [String] the resource's NOID.
     # @param nuid [String, nil] the acting user's NUID, stamped on the resource
     #   as `tombstoned_by`.

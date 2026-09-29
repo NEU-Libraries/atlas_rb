@@ -144,6 +144,12 @@ module AtlasRb
     # @param blob_path [String] path to the binary file on disk to upload.
     # @param original_filename [String] the user-facing filename Atlas
     #   should record (e.g. `"final_thesis.pdf"`).
+    # @param language [String, nil] optional BCP 47 language of a caption or
+    #   other text track (e.g. `"en"`, `"es-MX"`). Atlas checks the shape of the
+    #   tag, not the registry, and refuses a malformed one with `422`
+    #   `invalid_language` before storing anything. Needs Atlas 0.6.211 or later.
+    # @param track_label [String, nil] optional name a player shows for the track
+    #   (e.g. `"Español"`), at most 64 characters (`422 invalid_track_label`).
     # @param idempotency_key [String, nil] optional UUID. A repeat call with
     #   the same key returns the originally-created Blob instead of creating
     #   a new one. See {AtlasRb::Work.create} for full semantics.
@@ -178,11 +184,15 @@ module AtlasRb
     #   key = SecureRandom.uuid
     #   AtlasRb::Blob.create("w-789", "/tmp/upload.tmp", "thesis.pdf",
     #                        idempotency_key: key, expected_digest: "sha256:#{sha}")
-    def self.create(id, blob_path, original_filename, expected_digest: nil,
+    #
+    # @example A Spanish caption track
+    #   AtlasRb::Blob.create("w-789", "/tmp/es.vtt", "es.vtt", language: "es", track_label: "Español")
+    def self.create(id, blob_path, original_filename, expected_digest: nil, language: nil, track_label: nil,
                     idempotency_key: nil, nuid: nil, on_behalf_of: nil)
       with_file_part(blob_path) do |part|
+        # compact drops only nil, so an empty string still reaches Atlas.
         payload = { work_id: id, original_filename: original_filename, binary: part }
-        payload[:expected_digest] = expected_digest if expected_digest
+                  .merge({ expected_digest: expected_digest, language: language, track_label: track_label }.compact)
 
         AtlasRb::Mash.new(write_resource(
           multipart(nuid, on_behalf_of: on_behalf_of, idempotency_key: idempotency_key)
@@ -215,12 +225,22 @@ module AtlasRb
 
     # Replace the bytes of an existing Blob in-place.
     #
-    # The Blob ID is preserved; only the underlying content changes. The
-    # original filename is *not* updated by this call — use a new
-    # {.create} if you need a different `original_filename`.
+    # The Blob ID is preserved and a new revision is appended. Pass
+    # `original_filename` when the replacement is a different file, above all a
+    # different type: Atlas records the name for this revision, and re-derives
+    # the MIME type from it. For the original file it also re-derives the label
+    # and the FileSet's classification; a derivative keeps its tier label.
+    # {.rollback} restores a revision's own name, so it needs no name.
     #
     # @param id [String] the Blob ID.
     # @param blob_path [String] path to the replacement binary on disk.
+    # @param original_filename [String, nil] the replacement's own filename.
+    #   Omit it to keep the current name. Needs Atlas 0.6.211 or later; an older
+    #   Atlas ignores it and keeps the name.
+    # @param language [String, nil] a new BCP 47 language for the track. Omit it
+    #   to keep the current one; pass `""` to clear it. See {.create}.
+    # @param track_label [String, nil] a new display name for the track. Omit it
+    #   to keep the current one; pass `""` to clear it.
     # @param expected_digest [String, nil] optional verify-on-ingest checksum,
     #   `"<algorithm>:<hexvalue>"`. 422 ({AtlasRb::FixityMismatchError}) on mismatch.
     # @param idempotency_key [String, nil] optional UUID. A double-submit of the
@@ -249,10 +269,15 @@ module AtlasRb
     #
     # @example Retry-safe replace
     #   AtlasRb::Blob.update("b-321", "/tmp/revised.pdf", idempotency_key: SecureRandom.uuid)
-    def self.update(id, blob_path, expected_digest: nil, idempotency_key: nil, nuid: nil, on_behalf_of: nil)
+    #
+    # @example Replace a Word file with a PDF
+    #   AtlasRb::Blob.update("b-321", "/tmp/upload.tmp", original_filename: "report.pdf")
+    def self.update(id, blob_path, original_filename: nil, expected_digest: nil, language: nil, track_label: nil,
+                    idempotency_key: nil, nuid: nil, on_behalf_of: nil)
       with_file_part(blob_path) do |part|
-        payload = { binary: part }
-        payload[:expected_digest] = expected_digest if expected_digest
+        # compact drops only nil, so `""` still reaches Atlas and clears a field.
+        payload = { binary: part, original_filename: original_filename, expected_digest: expected_digest,
+                    language: language, track_label: track_label }.compact
 
         AtlasRb::Mash.new(write_resource(
           multipart(nuid, on_behalf_of: on_behalf_of, idempotency_key: idempotency_key)
@@ -268,7 +293,8 @@ module AtlasRb
     # envelope: one descriptor per retained content revision, each carrying its
     # OCFL `version_id` label, the `file_identifier` appended for that revision,
     # the `created` timestamp, the `digest`/`size` recorded at that version,
-    # the stable `original_filename`, and actor attribution (`actor_nuid` /
+    # that revision's own `original_filename` (a replace can rename the file),
+    # and actor attribution (`actor_nuid` /
     # `on_behalf_of_nuid`, null when no audit event correlates).
     #
     # Server admin-gates this endpoint (it exposes edit attribution), so

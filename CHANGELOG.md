@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.22.0
+
+These bindings need Atlas 0.6.211 or later.
+
+### Added — `Blob.update(original_filename:)`, renaming the file on a replace
+
+```ruby
+AtlasRb::Blob.update(blob_id, "/tmp/upload.tmp", original_filename: "report.pdf")
+```
+
+A replacement of a different type used to keep the old name, so a `.docx`
+replaced by a `.pdf` downloaded as `.docx`. Atlas now records the name for the
+new revision and re-derives the MIME type from it. For the original file it also
+re-derives the label and the FileSet's classification. Omit the keyword to keep
+the current name. `Blob.rollback` needs no change: Atlas restores the revision's
+own name.
+
+### Added — `language:` and `track_label:` on `Blob.create` and `Blob.update`
+
+```ruby
+AtlasRb::Blob.create(work_id, "/tmp/es.vtt", "es.vtt", language: "es", track_label: "Español")
+```
+
+A caption's BCP 47 language and the name a player shows for it. Each is sent
+only when given, so an update keeps a value it does not mention, and `""`
+clears one. Atlas refuses a malformed value with a `422`, which raises
+`ResourceError`. `Work.assets` and `Work.file_sets` return both fields on Blob
+entries with no reader change.
+
+### Documented — tombstoning a FileSet, and the `original` image tier
+
+- `Resource.tombstone` and `Admin::Resource.restore` accept a FileSet id. That
+  withdraws a caption or other attached file reversibly. Atlas allows it for the
+  admin and devolved-admin tiers only. Despite its namespace,
+  `Admin::Resource.restore` is called by delegates too.
+- `Work.set_derivative_permissions` documents the image floor as `original`, not
+  `master`. Atlas accepts `master` on write for one release and stores it as
+  `original`.
+
 ## 1.21.0
 
 ### Added — `System::Work.remove_linked_member`, unlinking a showcase Work

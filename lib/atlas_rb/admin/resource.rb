@@ -53,6 +53,13 @@ module AtlasRb
       # stub. No `confirm:` marker — restoring is itself reversible, by
       # tombstoning again.
       #
+      # Accepts a FileSet id too (Atlas 0.6.211 or later), which puts a withdrawn
+      # caption or other attached file back in {Work.assets}.
+      #
+      # The devolved-admin tier calls this as well, although the namespace reads
+      # as admin-only. Atlas owns the gate; this namespace only marks the call as
+      # an operator action.
+      #
       # @param id [String] the resource's NOID.
       # @param nuid [String, nil] optional acting user's NUID.
       # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`

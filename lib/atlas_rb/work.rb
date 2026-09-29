@@ -328,7 +328,7 @@ module AtlasRb
     # Grouper group names, `[]` = private). Two media families:
     #
     # * the image ladder `small` / `medium` / `large` / `service` (deep-zoom) /
-    #   `master` (the original image), and
+    #   `original` (the deposited image), and
     # * independent media `audio` / `video` / `pdf`.
     #
     # Unlike {.set_image_derivatives} (which upserts URIs) this is a whole-object
@@ -340,18 +340,20 @@ module AtlasRb
     #
     # Atlas enforces: a tier may not be more visible than the Work, and — within
     # the image ladder — visibility must narrow as resolution grows
-    # (`master` ⊆ `service` ⊆ `large` ⊆ `medium` ⊆ `small`; independent media
+    # (`original` ⊆ `service` ⊆ `large` ⊆ `medium` ⊆ `small`; independent media
     # impose no ordering). The gate is advisory — it surfaces on {.assets} as
-    # `gated` / `permission` for BOTH Delegate (image tier) and Blob (master /
+    # `gated` / `permission` for BOTH Delegate (image tier) and Blob (original /
     # pdf / audio / video, classified by media type) entries, for the display
     # layer (Cerberus / the IIIF auth service; Cerberus's download :read check)
     # to enforce.
     #
     # @param id [String] the Work ID.
     # @param policy [Hash] tier => Array(read groups), e.g.
-    #   `{ large: ["northeastern:drs:repository:archives"], master: [...] }`.
+    #   `{ large: ["northeastern:drs:repository:archives"], original: [...] }`.
     #   Keys may be strings or symbols; recognized keys are `small` / `medium` /
-    #   `large` / `service` / `master` / `audio` / `video` / `pdf`.
+    #   `large` / `service` / `original` / `audio` / `video` / `pdf`. Atlas
+    #   0.6.211 renamed the image floor from `master`; for one release it still
+    #   accepts `master` on write and stores it as `original`.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
@@ -434,6 +436,11 @@ module AtlasRb
     # via {.set_derivative_permissions}: `gated` (true if the asset must be
     # authorized rather than fetched directly) and `permission` (the effective
     # read-group set, or `nil` for guests, to whom group names are withheld).
+    #
+    # A Blob entry also carries `language` and `track_label`, set by {Blob.create}
+    # and {Blob.update} for a caption or other text track and `nil` otherwise
+    # (Atlas 0.6.211 or later). A FileSet withdrawn with {Resource.tombstone}
+    # drops out of this listing and {.file_sets}.
     #
     # @param id [String] the Work ID.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
