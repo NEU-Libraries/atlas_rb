@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.23.0
+
+These bindings need Atlas 0.6.212 or later.
+
+### Added — `Work.withdrawn_assets`, the listing a Restore needs
+
+```ruby
+AtlasRb::Work.withdrawn_assets(work_id, nuid: admin_nuid).each do |asset|
+  AtlasRb::Admin::Resource.restore(asset.file_set, nuid: admin_nuid)
+end
+```
+
+A FileSet withdrawn with `Resource.tombstone` drops out of `Work.assets` and
+`Work.file_sets`, so nothing listed it. This read lists the assets of a Work's
+withdrawn FileSets, in the `Work.assets` shape plus the FileSet's
+`tombstoned_at` and `tombstoned_by`. Atlas allows it for the admin and
+devolved-admin tiers; anyone else gets a `403`, which raises `ResourceError`. A
+missing Work returns `nil`.
+
+### Documented — `file_set` on every `Work.assets` and `Work.file_sets` entry
+
+Each asset entry carries the NOID of the FileSet it is listed under. That is
+the id `Resource.tombstone` and `Admin::Resource.restore` take, so a caller no
+longer needs `Blob.ancestry` to find it. No reader change.
+
 ## 1.22.0
 
 These bindings need Atlas 0.6.211 or later.

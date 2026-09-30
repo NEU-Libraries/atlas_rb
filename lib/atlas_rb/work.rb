@@ -440,7 +440,11 @@ module AtlasRb
     # A Blob entry also carries `language` and `track_label`, set by {Blob.create}
     # and {Blob.update} for a caption or other text track and `nil` otherwise
     # (Atlas 0.6.211 or later). A FileSet withdrawn with {Resource.tombstone}
-    # drops out of this listing and {.file_sets}.
+    # drops out of this listing and {.file_sets}; {.withdrawn_assets} lists it.
+    #
+    # Every entry carries `file_set`, the NOID of the FileSet it is listed
+    # under (Atlas 0.6.212 or later). That is the id {Resource.tombstone} and
+    # {Admin::Resource.restore} take to withdraw or restore the file.
     #
     # @param id [String] the Work ID.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
@@ -465,6 +469,44 @@ module AtlasRb
       end
     end
 
+    # List the assets of a Work's withdrawn FileSets, so they can be restored.
+    #
+    # Wraps `GET /works/<id>/withdrawn_assets` (Atlas 0.6.212 or later). A
+    # FileSet withdrawn with {Resource.tombstone} drops out of {.assets} and
+    # {.file_sets}; this is the listing that still names it. Each entry has the
+    # {.assets} shape, including `file_set` (the id to pass to
+    # {Admin::Resource.restore}), plus the FileSet's `tombstoned_at` and
+    # `tombstoned_by`.
+    #
+    # Atlas allows it for the admin and devolved-admin tiers only, the same
+    # tiers that may tombstone and restore a FileSet.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Array<AtlasRb::Mash>, nil] one entry per asset of a withdrawn
+    #   FileSet; `[]` when nothing is withdrawn.
+    #
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (a `403` for a caller below the delegate tier, a `5xx`, a proxy's
+    #   `503`), carrying Atlas's status and body so the failure is attributable
+    #   at the boundary.
+    # @example Offer Restore for a removed caption
+    #   AtlasRb::Work.withdrawn_assets("w-789", nuid: admin_nuid).each do |a|
+    #     AtlasRb::Admin::Resource.restore(a.file_set, nuid: admin_nuid)
+    #   end
+    def self.withdrawn_assets(id, nuid: nil, on_behalf_of: nil)
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/withdrawn_assets')) do |body|
+        body.map { |entry| AtlasRb::Mash.new(entry) }
+      end
+    end
+
     # List a Work's page FileSets in order, each with its assets.
     #
     # Wraps `GET /works/<id>/file_sets` — the ordered, grouped sibling of
@@ -473,7 +515,7 @@ module AtlasRb
     # (`null`-position) FileSets last; metadata and derivative-container
     # FileSets are excluded as entries. Each entry nests its downloadable
     # assets — the page's content Blobs plus any per-page IIIF Delegates —
-    # in the same polymorphic shape {.assets} returns.
+    # in the same polymorphic shape {.assets} returns, `file_set` included.
     #
     # This is the read a IIIF Presentation manifest assembler needs: the
     # response is **unpaginated** by design, so the whole page sequence
