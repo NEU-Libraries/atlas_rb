@@ -14,7 +14,9 @@ module AtlasRb
   # logged-in-user capabilities.
   #
   # The directory lookups enforce minimal disclosure: every entry carries
-  # `nuid` + `name` only (no email, role, or groups), and rows with role
+  # `nuid`, `name` and `display_name` only (no email, role, or groups). `name`
+  # is the SSO-fed account name; `display_name` is the librarian-curated Person
+  # name for that NUID, or `nil` when the NUID has no Person. Rows with role
   # `anonymous`, `guest`, or `system` are never returned. The account methods
   # ({.accounts} / {.set_preferred}) *do* disclose email/groups/affiliation, so
   # Atlas limits them to the person themselves (matching NUID), an admin, or the
@@ -30,16 +32,18 @@ module AtlasRb
 
     # Typeahead search of the user directory.
     #
-    # Case-insensitive match on name, prefix match on NUID (so typing a
-    # known NUID works too). Atlas caps the result (10 entries) and orders
-    # it by name; a blank query resolves to an empty list.
+    # Case-insensitive match on the account `name` or the curated
+    # `display_name`, prefix match on NUID (so typing a known NUID works too).
+    # Atlas caps the result (10 entries) and orders it by the name an entry
+    # shows — `display_name` when set, else `name`; a blank query resolves to
+    # an empty list.
     #
     # @param query [String] name fragment or NUID prefix to match.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
     # @return [Array<AtlasRb::Mash>, nil] matching directory entries, each
-    #   carrying `nuid` and `name`.
+    #   carrying `nuid`, `name` and `display_name` (`nil` without a Person).
     #
     #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
     #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
@@ -48,7 +52,7 @@ module AtlasRb
     #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Recipient typeahead
     #   AtlasRb::User.search("jan", nuid: "000000002")
-    #   # => [{ "nuid" => "001234567", "name" => "Doe, Jane" }, ...]
+    #   # => [{ "nuid" => "001234567", "name" => "Doe, Jane", "display_name" => "Jane Doe" }, ...]
     def self.search(query, nuid: nil)
       read_body(connection({ q: query }, nuid).get(ROUTE)) do |body|
         body.map { |entry| AtlasRb::Mash.new(entry) }
@@ -62,7 +66,8 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
-    # @return [AtlasRb::Mash, nil] the `nuid` + `name` entry, or `nil` when
+    # @return [AtlasRb::Mash, nil] the `nuid`, `name` and `display_name`
+    #   entry (`display_name` is `nil` without a Person), or `nil` when
     #   Atlas reports the NUID as absent (unknown, or held by an excluded
     #   role — the two are indistinguishable on the wire by design).
     #
@@ -71,7 +76,7 @@ module AtlasRb
     #   Atlas's status and body so the failure is attributable at the boundary.
     # @example Sender-name display
     #   AtlasRb::User.find_by_nuid("001234567")
-    #   # => { "nuid" => "001234567", "name" => "Doe, Jane" }
+    #   # => { "nuid" => "001234567", "name" => "Doe, Jane", "display_name" => "Jane Doe" }
     def self.find_by_nuid(target_nuid, nuid: nil)
       read_body(connection({}, nuid).get("#{ROUTE}/by_nuid/#{target_nuid}")) do |body|
         AtlasRb::Mash.new(body)
@@ -88,8 +93,8 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
-    # @return [Array<AtlasRb::Mash>, nil] resolved entries, each carrying `nuid`
-    #   and `name`, ordered by name.
+    # @return [Array<AtlasRb::Mash>, nil] resolved entries, each carrying `nuid`,
+    #   `name` and `display_name`, ordered by the name an entry shows.
     #
     #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
     #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.

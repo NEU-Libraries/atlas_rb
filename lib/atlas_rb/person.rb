@@ -20,8 +20,8 @@ module AtlasRb
   # keep their usual gem meaning (the acting principal). NUID stays the key only
   # for {.create} (one Person per NUID — and there `nuid:` is the *new person's*
   # NUID, acting principal coming from the ambient `AtlasRb.config.default_nuid`)
-  # and {.resolve} (the server-side name-resolution batch). {.list} is the
-  # NOID-keyed People-index source.
+  # and {.resolve} (the server-side name-resolution batch). {.list} and
+  # {.page} are the NOID-keyed People-index source.
   #
   # Create / update / affiliation writes are :system + admin on the server; a
   # non-privileged caller gets a 403.
@@ -50,6 +50,14 @@ module AtlasRb
     # through atlas_rb without
     # routing People through the catalog/Solr or exposing a NUID publicly.
     #
+    # Pass `q:` to search: Atlas returns the Persons whose `display_name`
+    # contains the fragment, whose NUID starts with it, or whose account email
+    # contains it, all case-insensitive and ordered by `display_name`. The
+    # search is admin-only; anyone else gets a `403`. Use {.page} for the
+    # match count.
+    #
+    # @param q [String, nil] typeahead fragment (admin only). Blank lists
+    #   everyone.
     # @param page [Integer, nil] 1-based page (server default when nil).
     # @param per_page [Integer, nil] page size (server default when nil; capped
     #   server-side).
@@ -62,10 +70,36 @@ module AtlasRb
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
     #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
     #   Atlas's status and body so the failure is attributable at the boundary.
-    def self.list(page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
-      params = { page: page, per_page: per_page }.compact
+    # @example Admin typeahead
+    #   AtlasRb::Person.list(q: "gasp", nuid: admin_nuid)
+    def self.list(q: nil, page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
+      self.page(q: q, page: page, per_page: per_page, nuid: nuid, on_behalf_of: on_behalf_of)&.people
+    end
+
+    # One page of the People index with its pagination block — {.list} with
+    # the counts kept, for a consumer that shows "page 2 of 7" or a total.
+    # With `q:`, the block counts the matches, not the whole registry.
+    #
+    # @param q [String, nil] typeahead fragment (admin only), as on {.list}.
+    # @param page [Integer, nil] 1-based page (server default when nil).
+    # @param per_page [Integer, nil] page size (server default when nil; capped
+    #   server-side).
+    # @param nuid [String, nil] acting principal.
+    # @param on_behalf_of [String, nil] acting-as target.
+    # @return [AtlasRb::Mash, nil] `{ "people" => [...], "pagination" => {...} }`,
+    #   each `"people"` entry in the {.list} row shape.
+    #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
+    #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
+    #   Atlas's status and body so the failure is attributable at the boundary.
+    # @example
+    #   result = AtlasRb::Person.page(q: "doe", page: 2, per_page: 50, nuid: admin_nuid)
+    #   result.pagination["count"] # => matches across every page (Hash#count shadows .count)
+    def self.page(q: nil, page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)
+      params = { q: q, page: page, per_page: per_page }.compact
       read_body(connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE)) do |body|
-        body["people"].map { |entry| AtlasRb::Mash.new(entry) }
+        AtlasRb::Mash.new(body)
       end
     end
 

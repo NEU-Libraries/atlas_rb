@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.25.0
+
+These bindings need Atlas 0.6.214 or later.
+
+### Added — `q:` on `Person.list`, and `Person.page`
+
+```ruby
+AtlasRb::Person.list(q: "gasp", nuid: admin_nuid)
+result = AtlasRb::Person.page(q: "doe", page: 2, per_page: 50, nuid: admin_nuid)
+result.pagination["count"] # => matches across every page
+```
+
+`q:` searches the People registry. Atlas returns the Persons whose
+`display_name` contains the fragment, whose NUID starts with it, or whose
+account email contains it, all case-insensitive and ordered by `display_name`.
+The search is admin-only. Anyone else gets a `403`, which raises
+`ResourceError`.
+
+`Person.page` takes the same arguments as `Person.list` and returns
+`{ "people" => [...], "pagination" => {...} }`, so a caller can show a page
+count and a total. With `q:`, the block counts the matches. `Person.list`
+still returns the rows alone.
+
+### Documented — `display_name` on the user directory
+
+`User.search`, `User.resolve` and `User.find_by_nuid` entries now carry
+`display_name`: the librarian-curated Person name for the NUID, or `nil` when
+there is no Person. `User.search` also matches on it, and Atlas orders entries
+by `display_name` when set, else `name`. No code changed: the gem already
+passes the whole entry through.
+
 ## 1.24.0
 
 These bindings need Atlas 0.6.213 or later.
