@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.24.0
+
+These bindings need Atlas 0.6.213 or later.
+
+### Added — `reason:` on `Resource.tombstone`
+
+```ruby
+AtlasRb::Resource.tombstone(work_id, reason: "Removed from view by legal order", nuid: admin_nuid)
+```
+
+The library's withdrawal policy requires a note saying why an object was
+removed, and fixes its wording. `reason:` must be one of the policy's five
+notes, word for word. Atlas answers `422` with `invalid_reason` for any other
+value, and the call returns that raw response as before. The note carries no
+date: read `tombstoned_at` for that.
+
+Community, Collection, Work and FileSet reads return the note as
+`tombstone_reason`, including the `410` body of a tombstoned read. A restore
+clears it. Omit the keyword to tombstone with no note, as before.
+
 ## 1.23.0
 
 These bindings need Atlas 0.6.212 or later.

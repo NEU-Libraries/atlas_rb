@@ -543,7 +543,7 @@ write. The whole surface:
 | `Resource.set_permissions(id, acl)` | `PATCH /resources/{id}/permissions` |
 | `Resource.set_thumbnails(id, thumbnail:, thumbnail_2x:, preview:)` | `PATCH /resources/{id}/thumbnails` |
 | `Resource.reparent(id, parent_id)` | `PATCH /resources/{id}/parent` |
-| `Resource.tombstone(id)` | `POST /resources/{id}/tombstone` |
+| `Resource.tombstone(id, reason:)` | `POST /resources/{id}/tombstone` |
 | `Admin::Resource.restore(id)` | `POST /resources/{id}/restore` |
 | `Admin::Resource.destroy(id, confirm: :i_understand)` | `DELETE /resources/{id}` |
 

@@ -144,14 +144,23 @@ module AtlasRb
     # {Work.file_sets}. Atlas refuses a FileSet from anyone outside the admin and
     # devolved-admin tiers with `403`, even a user who can edit the Work.
     #
+    # `reason:` records why the resource was removed (Atlas 0.6.213 or later).
+    # It must be one of the removal notes the library's withdrawal policy
+    # allows, word for word; Atlas answers `422` with `invalid_reason` for any
+    # other value. The note carries no date: read `tombstoned_at` for that.
+    # The resource returns it as `tombstone_reason`, and a restore clears it.
+    #
     # @param id [String] the resource's NOID.
+    # @param reason [String, nil] one of the policy's removal notes, or `nil`
+    #   for none.
     # @param nuid [String, nil] the acting user's NUID, stamped on the resource
     #   as `tombstoned_by`.
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header.
     # @return [Faraday::Response] the raw response — read `status` yourself.
-    def self.tombstone(id, nuid: nil, on_behalf_of: nil)
-      connection({}, nuid, on_behalf_of: on_behalf_of).post('/resources/' + id + '/tombstone')
+    def self.tombstone(id, reason: nil, nuid: nil, on_behalf_of: nil)
+      connection({}, nuid, on_behalf_of: on_behalf_of)
+        .post('/resources/' + id + '/tombstone', { reason: reason }.compact.to_json)
     end
 
     # Atlas answers a write with the resource under its type key, matching what
