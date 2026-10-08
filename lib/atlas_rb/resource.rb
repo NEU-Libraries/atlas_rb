@@ -557,13 +557,13 @@ module AtlasRb
     # @param origin [String, nil] the edit-origin tag, or `nil` to send none.
     # @return [Hash] the multipart payload.
     # @api private
-    def self.mods_upload_payload(xml_path, origin)
+    def self.xml_upload_payload(xml_path, origin)
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
                                                            File.basename(xml_path)) }
       payload[:origin] = origin.to_s unless origin.nil? || origin.to_s.empty?
       payload
     end
-    private_class_method :mods_upload_payload
+    private_class_method :xml_upload_payload
   end
 end

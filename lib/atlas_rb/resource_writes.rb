@@ -52,7 +52,7 @@ module AtlasRb
     def self.put_mods(id, xml_path, nuid: nil, on_behalf_of: nil, origin: nil)
       unwrap(write_resource(
                multipart(nuid, on_behalf_of: on_behalf_of)
-                 .put('/resources/' + id + '/mods', mods_upload_payload(xml_path, origin))
+                 .put('/resources/' + id + '/mods', xml_upload_payload(xml_path, origin))
              ))
     end
 
@@ -81,7 +81,7 @@ module AtlasRb
     def self.put_dwc(id, xml_path, nuid: nil, on_behalf_of: nil, origin: nil)
       unwrap(write_resource(
                multipart(nuid, on_behalf_of: on_behalf_of)
-                 .put('/resources/' + id + '/dwc', mods_upload_payload(xml_path, origin))
+                 .put('/resources/' + id + '/dwc', xml_upload_payload(xml_path, origin))
              ))
     end
 
