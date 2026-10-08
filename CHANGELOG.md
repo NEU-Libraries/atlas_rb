@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.26.0
+
+These bindings need Atlas 0.6.221 or later.
+
+### Added — Darwin Core records
+
+```ruby
+AtlasRb::Work.dwc(id, kind = "xml")             # "xml", "json" or "html"; nil on 404
+AtlasRb::Resource.put_dwc(id, xml_path, origin: nil)
+AtlasRb::Resource.delete_dwc(id)                # true; raises NotFoundError on 404
+AtlasRb::Resource.dwc_versions(id)
+AtlasRb::Resource.dwc_version(id, version_id)
+```
+
+A Work can hold one Simple Darwin Core record. `Work.dwc` returns the stored
+XML by default, the display block for `"html"`, and the Work unwrapped from
+`"work"` for `"json"`, with the terms under `"dwc"`. `put_dwc` replaces the
+whole record and raises `ResourceError` on Atlas's `422` when the document
+breaks a shape rule. `delete_dwc` withdraws the record without purging it, so
+the next `put_dwc` restores it. The version calls mirror `mods_versions` and
+`mods_version`.
+
+### Documented — `metadata_formats` on the Work
+
+`Work.find` results now carry `metadata_formats`, the additional records the
+Work holds, such as `["dwc"]`. No code changed: the gem passes the whole Work
+through.
+
 ## 1.25.0
 
 These bindings need Atlas 0.6.214 or later.

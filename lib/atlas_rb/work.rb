@@ -613,6 +613,39 @@ module AtlasRb
                ))
     end
 
+    # Fetch the Work's Darwin Core record in the requested format.
+    #
+    # A Work holds a record only when its `metadata_formats` includes `"dwc"`,
+    # so check that before calling: a Work with no record answers `nil` here.
+    #
+    # @param id [String] the Work ID.
+    # @param kind [String] one of `"xml"` (default), `"json"` or `"html"`.
+    #   `"xml"` is the stored Simple Darwin Core document, byte for byte, for a
+    #   standalone download. `"html"` is the display block, the counterpart of
+    #   `Work.mods(id, "html")`; each `<dt>` names its term in `data-term`.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [String, AtlasRb::Mash, nil] the raw body for `"xml"` and
+    #   `"html"`; for `"json"`, the Work unwrapped from its `"work"` key, with
+    #   the terms under `"dwc"`.
+    #
+    #   `nil` when Atlas answers `404` — the Work holds no record (or it was
+    #   withdrawn), or the id is not a Work.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`,
+    #   such as the `403` for a Work the caller may not read.
+    # @example
+    #   AtlasRb::Work.dwc("w-789", "json")["dwc"]["catalogNumber"] # => "S27880"
+    def self.dwc(id, kind = 'xml', nuid: nil, on_behalf_of: nil)
+      body = read_raw(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + "/dwc.#{kind}"))
+      return body unless kind.to_s == 'json' && body
+
+      AtlasRb::Mash.new(JSON.parse(body))['work']
+    end
+
     # List the Collections a Work is a *linked* member of.
     #
     # Wraps `GET /works/<id>/linked_members`. Linked membership is the DAG

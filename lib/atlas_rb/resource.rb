@@ -419,6 +419,47 @@ module AtlasRb
                ))
     end
 
+    # List the retained versions of a Work's Darwin Core record.
+    #
+    # The same envelope as {mods_versions}, under the same admin gate, with
+    # attribution drawn from the Darwin Core edits only. A Work with no record,
+    # or an id that is not a Work, comes back as `{ "versions" => [] }`.
+    #
+    # @param id [String] the Work's NOID.
+    # @param nuid [String, nil] optional acting user's NUID.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header.
+    # @return [AtlasRb::Mash, nil] the envelope, with `"resource_id"` and a
+    #   newest-first `"versions"` array; `nil` on a `404`.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`,
+    #   including the `403` a non-admin caller gets.
+    # @example
+    #   AtlasRb::Resource.dwc_versions("w-789")["versions"].first["source"] # => "dwc"
+    def self.dwc_versions(id, nuid: nil, on_behalf_of: nil)
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of)
+                  .get('/resources/' + id + '/dwc/versions')) { |body| AtlasRb::Mash.new(body) }
+    end
+
+    # Fetch a Work's Darwin Core document as of a specific version.
+    #
+    # XML only, because Atlas overwrites the JSON access copy in place. Pass a
+    # `version_id` from {dwc_versions}.
+    #
+    # @param id [String] the Work's NOID.
+    # @param version_id [String] an OCFL version label, e.g. `"v3"`.
+    # @param nuid [String, nil] optional acting user's NUID.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header.
+    # @return [String, nil] the raw XML; `nil` on a `404` (unknown version, or
+    #   no record ever written).
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`.
+    # @example
+    #   AtlasRb::Resource.dwc_version("w-789", "v3")
+    def self.dwc_version(id, version_id, nuid: nil, on_behalf_of: nil)
+      read_raw(connection({}, nuid, on_behalf_of: on_behalf_of)
+                 .get('/resources/' + id + '/dwc/versions/' + version_id))
+    end
+
     # Shared read path behind every typed `find`: perform a single-resource
     # `GET` and hand the response to {AtlasRb::FaradayHelper#read_body}, which
     # owns the status mapping (`404` → `nil`, `410` → the tombstone body, any
@@ -485,21 +526,25 @@ module AtlasRb
     # @raise [AtlasRb::ResourceError] on any other non-2xx except `410`.
     # @api private
     def self.write_resource(resp)
-      if resp.status == 404
-        raise AtlasRb::NotFoundError.new("#{request_target(resp)} → 404 (no such resource)", response: resp)
-      end
-
-      unless resp.success? || resp.status == 410
-        raise AtlasRb::ResourceError.new("#{request_target(resp)} → #{resp.status}: #{resp.body}", response: resp)
-      end
-
+      guard_write(resp)
       JSON.parse(resp.body)
     end
     private_class_method :write_resource
 
-    # The multipart body behind {Work.update} / {Collection.update} /
-    # {Community.update}: the MODS document, plus the optional `origin` tag
-    # naming the surface that produced the edit.
+    # The status half of {write_resource}, for a write that answers with no
+    # body, such as a `204`.
+    def self.guard_write(resp)
+      if resp.status == 404
+        raise AtlasRb::NotFoundError.new("#{request_target(resp)} → 404 (no such resource)", response: resp)
+      end
+      return if resp.success? || resp.status == 410
+
+      raise AtlasRb::ResourceError.new("#{request_target(resp)} → #{resp.status}: #{resp.body}", response: resp)
+    end
+    private_class_method :guard_write
+
+    # The multipart body behind {put_mods} and {put_dwc}: the XML document,
+    # plus the optional `origin` tag naming the surface that produced the edit.
     #
     # Atlas records `origin` verbatim on the audit event and never branches on
     # it, so a host names its own surfaces (Cerberus sends `metadata_form`,

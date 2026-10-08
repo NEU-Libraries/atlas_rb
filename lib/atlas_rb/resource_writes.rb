@@ -56,6 +56,57 @@ module AtlasRb
              ))
     end
 
+    # Replace a Work's Darwin Core record.
+    #
+    # `PUT`: the document replaces the whole record. The first call creates it,
+    # and a call after {delete_dwc} restores it. Each call appends a version.
+    # Atlas checks the document's shape; validating it against
+    # `tdwg_dwc_simple.xsd` is the caller's job.
+    #
+    # @param id [String] the Work's NOID.
+    # @param xml_path [String] path to the Simple Darwin Core XML to upload.
+    # @param nuid [String, nil] optional acting user's NUID.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header.
+    # @param origin [String, nil] the editing surface to record on the audit
+    #   event, e.g. `"xml_loader"`. Omitted from the body when nil.
+    # @return [AtlasRb::Mash] the Work's `id` and its terms under `"dwc"`.
+    # @raise [AtlasRb::NotFoundError] on `404` — no such id, or not a Work.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx. A refused document
+    #   is a `422` whose body names the rule in `error`: `malformed_xml`,
+    #   `invalid_root`, `record_count` or `duplicate_term`.
+    #
+    # @example
+    #   AtlasRb::Resource.put_dwc("xsj3xmz", "/tmp/dwc.xml", origin: "xml_loader")
+    def self.put_dwc(id, xml_path, nuid: nil, on_behalf_of: nil, origin: nil)
+      unwrap(write_resource(
+               multipart(nuid, on_behalf_of: on_behalf_of)
+                 .put('/resources/' + id + '/dwc', mods_upload_payload(xml_path, origin))
+             ))
+    end
+
+    # Withdraw a Work's Darwin Core record.
+    #
+    # Nothing is purged: Atlas keeps the document and its version history, and
+    # the next {put_dwc} restores the record. Until then {Work.dwc} answers
+    # `nil` and the Work's `metadata_formats` leaves out `"dwc"`.
+    #
+    # @param id [String] the Work's NOID.
+    # @param nuid [String, nil] optional acting user's NUID.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header.
+    # @return [true] when the record was withdrawn.
+    # @raise [AtlasRb::NotFoundError] on `404` — the Work holds no record, or
+    #   the id is not a Work.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx.
+    #
+    # @example
+    #   AtlasRb::Resource.delete_dwc("xsj3xmz")
+    def self.delete_dwc(id, nuid: nil, on_behalf_of: nil)
+      guard_write(connection({}, nuid, on_behalf_of: on_behalf_of).delete('/resources/' + id + '/dwc'))
+      true
+    end
+
     # Adjust a resource's ACL.
     #
     # `PATCH`, and every key merges: a key you omit keeps its stored value.

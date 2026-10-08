@@ -527,6 +527,35 @@ array (mirroring `Collection.children`); the two mutations return the list
 Resolving those Collections' full contents is a Cerberus/Solr concern —
 this gem never queries the index.
 
+### Darwin Core records
+
+A Work can hold one Simple Darwin Core record beside its MODS. The Work's
+`metadata_formats` says whether it does, so check that before reading:
+
+```ruby
+work = AtlasRb::Work.find("w-789")
+if work["metadata_formats"].include?("dwc")
+  AtlasRb::Work.dwc("w-789", "html")                         # the display block
+  AtlasRb::Work.dwc("w-789", "json")["dwc"]["catalogNumber"]  # => "S27880"
+  AtlasRb::Work.dwc("w-789")                                 # the stored XML
+end
+
+AtlasRb::Resource.put_dwc("w-789", "/tmp/dwc.xml", origin: "xml_loader")
+AtlasRb::Resource.delete_dwc("w-789")   # withdraws; the next put_dwc restores
+
+history = AtlasRb::Resource.dwc_versions("w-789")
+AtlasRb::Resource.dwc_version("w-789", history["versions"].last["version_id"])
+```
+
+`Work.dwc` answers `nil` when the Work holds no record. `put_dwc` raises
+`ResourceError` on a refused document; its body's `error` names the rule
+(`malformed_xml`, `invalid_root`, `record_count` or `duplicate_term`). Atlas
+checks shape only, so validate against `tdwg_dwc_simple.xsd` before you call.
+`delete_dwc` purges nothing: Atlas keeps the document and its history.
+
+The two version calls behave as `mods_versions` and `mods_version` do, under
+the same admin gate.
+
 The two mutations raise the same way `reparent` does — `LinkedMemberError`
 on a structural `422` (carrying the envelope's `error` code as `#code`) and
 `ForbiddenError` on a `403` — instead of swallowing the envelope.
@@ -540,6 +569,8 @@ write. The whole surface:
 | Call | Endpoint |
 |---|---|
 | `Resource.put_mods(id, xml_path, origin:)` | `PUT /resources/{id}/mods` |
+| `Resource.put_dwc(id, xml_path, origin:)` | `PUT /resources/{id}/dwc` (Works only) |
+| `Resource.delete_dwc(id)` | `DELETE /resources/{id}/dwc` (Works only) |
 | `Resource.set_permissions(id, acl)` | `PATCH /resources/{id}/permissions` |
 | `Resource.set_thumbnails(id, thumbnail:, thumbnail_2x:, preview:)` | `PATCH /resources/{id}/thumbnails` |
 | `Resource.reparent(id, parent_id)` | `PATCH /resources/{id}/parent` |
