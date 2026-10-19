@@ -35,8 +35,8 @@ and the Solr digests. `klass` itself is unchanged.
 ### Added — `Resource.wire_key`
 
 Each resolvable class registers itself by calling `wire_key` in its body. The
-key defaults to the snake-cased class name, which is the root key Atlas wraps
-the type's JSON in; pass a string to override it.
+key is the snake-cased class name, which is the root key Atlas wraps the
+type's JSON in.
 
 ### Added — `mods_editable?`
 

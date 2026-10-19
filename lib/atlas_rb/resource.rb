@@ -27,18 +27,18 @@ module AtlasRb
 
     # Registers this class as a type the resolver can answer with.
     #
-    # The key defaults to the class name in snake case, which is the root key
-    # Atlas wraps the type's JSON in (`json.file_set do`). Pass a key only for a
-    # type whose wire name differs from its class name.
+    # The key is the class name in snake case, which is the root key Atlas
+    # wraps the type's JSON in (`json.file_set do`). That holds for every type
+    # today; a type whose wire name ever differs would need a key argument.
     #
     # {Compilation} does not call this: Atlas's resolver covers Valkyrie-backed
     # types only, and a Compilation is an ActiveRecord row there.
     #
-    # @param key [String] the type's wire key.
     # @return [void]
-    def self.wire_key(key = name.split("::").last.gsub(/(?<!\A)([A-Z])/, '_\1').downcase)
-      TYPES[key] = self
-      TYPES[name.split("::").last] = self
+    def self.wire_key
+      class_name = name.split("::").last
+      TYPES[class_name.gsub(/(?<!\A)([A-Z])/, '_\1').downcase] = self
+      TYPES[class_name] = self
     end
 
     # The class registered for a type string, in either spelling.
