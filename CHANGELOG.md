@@ -1,5 +1,49 @@
 # Changelog
 
+## 1.27.0
+
+### Removed — `Resource.class_for` and `Resource::TYPE_MAP`
+
+Callers no longer turn a type string into a class themselves. Replace
+
+```ruby
+AtlasRb::Resource.class_for(found.klass)
+```
+
+with
+
+```ruby
+found.resource_class
+```
+
+The lookup no longer accepts `"File_set"`, the spelling `find` emitted
+before 1.17.0, or `"compilation"` / `"Compilation"`, which no Atlas payload
+reports: the resolver covers Valkyrie-backed types only. Each now raises
+`ArgumentError`. `lib/atlas_rb/resource_types.rb` is gone.
+
+### Added — `Mash#resource_class`
+
+```ruby
+AtlasRb::Resource.find(id).resource_class                # => AtlasRb::FileSet
+AtlasRb::Resource.search("whaling").results.first.resource_class
+```
+
+Every Atlas payload that names a type carries it as `"klass"`, so the method
+lives on the shared `Mash` and covers `find`, `find_many`, `ancestors` nodes
+and the Solr digests. `klass` itself is unchanged.
+
+### Added — `Resource.wire_key`
+
+Each resolvable class registers itself by calling `wire_key` in its body. The
+key defaults to the snake-cased class name, which is the root key Atlas wraps
+the type's JSON in; pass a string to override it.
+
+### Added — `mods_editable?`
+
+`true` for `Work`, `Collection` and `Community`, `false` for every other
+type. It matches Atlas's `ResourcesController::TYPED_IVARS`, which Atlas
+does not expose on the wire.
+
 ## 1.26.0
 
 These bindings need Atlas 0.6.221 or later.

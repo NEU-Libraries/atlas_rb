@@ -615,34 +615,35 @@ Writes that address something only one type has stay typed — `create`, the
 Work-only lifecycle and derivative writes, `Collection.set_featured`, and the
 FileSet, Blob and Compilation writes.
 
-### Resolving one id of unknown type (`Resource.find` and `Resource.class_for`)
+### Resolving one id of unknown type (`Resource.find` and `resource_class`)
 
 When a NOID arrives as runtime data and you do not know its type, resolve
 it generically and dispatch on the reported type:
 
 ```ruby
 found = AtlasRb::Resource.find("b8gtjvk")
-found["klass"]                                   # => "FileSet"
-klass = AtlasRb::Resource.class_for(found["klass"])  # => AtlasRb::FileSet
-klass.find(found["resource"]["id"])
+found.klass                             # => "FileSet"
+found.resource_class                    # => AtlasRb::FileSet
+found.resource_class.find(found.resource.id)
 ```
 
-`class_for` is the supported way to turn a type string into a class. Do not
-`const_get` into the `AtlasRb` namespace: the mapping is a stated, closed
-set (`Resource::TYPE_MAP`), not a naming rule — `Blob`'s route is `/files/`,
-and a wire key like `file_set` is not the class name.
+`resource_class` is the supported way to get from a result to its class.
+It works on every Atlas payload that carries a `"klass"`: `find`,
+`find_many`, `ancestors` nodes, and the `search`, `descendant_works` and
+`Compilation.contents` digests. Keep `klass` when the type has to be
+serialized — a job argument, a log line — and use `resource_class` when
+you act on it. Do not `const_get` into the `AtlasRb` namespace.
 
-It accepts every spelling the DRS stack produces for a type, because a
-caller cannot tell which one it is holding:
+Each resolvable class registers itself with `wire_key`, which derives the
+key Atlas wraps its JSON in from the class name (`FileSet` → `"file_set"`).
+A row naming a type no class registers raises `ArgumentError` rather than
+returning `nil`, so a type this gem does not model fails where the cause
+is.
 
-| Spelling      | Where it comes from                        |
-|---------------|--------------------------------------------|
-| `"file_set"`  | Atlas's JSON wire key                      |
-| `"FileSet"`   | Solr's `internal_resource`, and `find`'s `"klass"` |
-| `"File_set"`  | a `"klass"` read from a gem before 1.17.0  |
-
-An unknown type raises `ArgumentError` rather than returning `nil`, so a
-type this gem does not model fails where the cause is.
+To ask whether a type has an editable MODS document, use
+`mods_editable?`: it is true for `Work`, `Collection` and `Community` only.
+`Resource.mods` answers for every type, so a successful read does not mean
+a write will be accepted.
 
 **What the resolver covers.** Atlas answers `/resources/:id` for its
 Valkyrie-backed types only: `Work`, `Collection`, `Community`, `FileSet`,
@@ -682,7 +683,7 @@ result = AtlasRb::Resource.search("whaling logbook", type: "Work", per_page: 50)
 result.pagination.total                 # => 12
 hit = result.results.first
 hit.title                               # => "Whaling logbook, 1851"
-AtlasRb::Resource.class_for(hit.klass).find(hit.noid)
+hit.resource_class.find(hit.noid)
 ```
 
 It searches Works, Collections, Communities and People, most relevant first.

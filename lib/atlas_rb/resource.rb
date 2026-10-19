@@ -97,12 +97,12 @@ module AtlasRb
     #   when the id resolves to nothing (`404`):
     #   - `"klass"` — the resource type as its class name, e.g. `"Work"`,
     #     `"FileSet"`. That is the spelling Solr carries as
-    #     `internal_resource`, and {Resource.class_for} turns it into the class.
+    #     `internal_resource`, and {Mash#resource_class} turns it into the class.
     #   - `"resource"` — the resource payload as a Hash.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an
     #   auth/validation error envelope), carrying Atlas's status + body.
-    # @raise [ArgumentError] when Atlas names a type this gem defines no class
-    #   for. See {Resource.class_for}.
+    # @raise [ArgumentError] when Atlas names a type this gem registers no class
+    #   for. See {Resource.wire_key}.
     #
     # @example Polymorphic lookup
     #   AtlasRb::Resource.find("abc123")
@@ -219,8 +219,8 @@ module AtlasRb
     # Each row is a digest read off Solr, not a resource: `{ "id", "noid",
     # "klass", "title", "creators", "year", "thumbnail", "in_progress",
     # "embargoed", "incomplete" }`. `klass` is one of the four type names
-    # above, which {class_for} accepts, so a caller loads the full resource
-    # with `class_for(hit.klass).find(hit.noid)`.
+    # above, so a caller loads the full resource with
+    # `hit.resource_class.find(hit.noid)`.
     #
     # @param query [String, nil] the search text. Omit or pass blank to browse
     #   everything the user may read, newest first.
@@ -241,7 +241,7 @@ module AtlasRb
     # @example Find a Work by a word in its title, then load it
     #   result = AtlasRb::Resource.search("whaling logbook", type: "Work")
     #   hit    = result.results.first
-    #   AtlasRb::Resource.class_for(hit.klass).find(hit.noid)
+    #   hit.resource_class.find(hit.noid)
     # @example Page through every match
     #   (1..AtlasRb::Resource.search("whaling").pagination.pages).flat_map do |page|
     #     AtlasRb::Resource.search("whaling", page: page).results
