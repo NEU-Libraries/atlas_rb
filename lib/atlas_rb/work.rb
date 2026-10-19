@@ -14,6 +14,11 @@ module AtlasRb
     ROUTE = "/works/"
     wire_key
 
+    # Atlas accepts a MODS write for this type. See {Resource.mods_editable?}.
+    def self.mods_editable?
+      true
+    end
+
     # Fetch a single Work by ID.
     #
     # @param id [String] the Work ID.

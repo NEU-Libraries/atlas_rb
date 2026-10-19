@@ -44,4 +44,12 @@ RSpec.describe AtlasRb::Resource do
       expect { described_class.resolve_type("File_set") }.to raise_error(ArgumentError)
     end
   end
+
+  describe ".mods_editable?" do
+    it "is true for exactly the types Atlas takes a MODS write for" do
+      editable = (resolvable + [AtlasRb::Compilation]).select(&:mods_editable?)
+
+      expect(editable).to match_array([AtlasRb::Work, AtlasRb::Collection, AtlasRb::Community])
+    end
+  end
 end

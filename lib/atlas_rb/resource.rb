@@ -57,6 +57,19 @@ module AtlasRb
       end
     end
 
+    # Whether Atlas accepts a MODS write for this type.
+    #
+    # {Resource.mods} is defined here on the base class, so every type answers
+    # the read — a FileSet's succeeds and returns nothing a curator can edit.
+    # Only {Work}, {Collection} and {Community} take a write, the same set as
+    # Atlas's `ResourcesController::TYPED_IVARS`. Atlas does not expose that
+    # set on the wire, so it is stated here.
+    #
+    # @return [Boolean]
+    def self.mods_editable?
+      false
+    end
+
     # Resolve any Atlas resource by ID without knowing its type up front.
     #
     # The Atlas server returns a single-key JSON object whose key names the
