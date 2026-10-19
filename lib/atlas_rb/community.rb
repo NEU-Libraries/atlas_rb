@@ -13,6 +13,7 @@ module AtlasRb
     # Atlas REST endpoint prefix for this resource.
     # @api private
     ROUTE = "/communities/"
+    wire_key
 
     # Fetch a single Community by ID.
     #

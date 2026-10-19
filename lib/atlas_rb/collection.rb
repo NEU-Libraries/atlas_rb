@@ -15,6 +15,7 @@ module AtlasRb
     # Atlas REST endpoint prefix for this resource.
     # @api private
     ROUTE = "/collections/"
+    wire_key
 
     # Fetch a single Collection by ID.
     #

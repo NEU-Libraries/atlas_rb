@@ -33,9 +33,9 @@ require_relative "atlas_rb/blob"
 require_relative "atlas_rb/delegate"
 require_relative "atlas_rb/compilation"
 require_relative "atlas_rb/person"
-# Must follow every Resource subclass above: it names them in a map.
-require_relative "atlas_rb/resource_types"
-# Same ordering requirement as resource_types: the typed writes delegate here.
+# Every resolvable type has registered itself by now.
+AtlasRb::Resource::TYPES.freeze
+# Must follow every Resource subclass above: the typed writes delegate here.
 require_relative "atlas_rb/resource_writes"
 require_relative "atlas_rb/user"
 require_relative "atlas_rb/admin"

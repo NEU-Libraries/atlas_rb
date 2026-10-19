@@ -12,6 +12,7 @@ module AtlasRb
     # Atlas REST endpoint prefix for this resource.
     # @api private
     ROUTE = "/works/"
+    wire_key
 
     # Fetch a single Work by ID.
     #

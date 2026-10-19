@@ -18,6 +18,45 @@ module AtlasRb
   class Resource
     extend AtlasRb::FaradayHelper
 
+    # Every type the Atlas resolver can answer with, filled by {wire_key} as
+    # each subclass loads and frozen in `atlas_rb.rb` once they all have. Keyed
+    # by both spellings Atlas produces: the wire key (`"file_set"`) and the
+    # class name Solr indexes as `internal_resource` (`"FileSet"`).
+    # @api private
+    TYPES = {}
+
+    # Registers this class as a type the resolver can answer with.
+    #
+    # The key defaults to the class name in snake case, which is the root key
+    # Atlas wraps the type's JSON in (`json.file_set do`). Pass a key only for a
+    # type whose wire name differs from its class name.
+    #
+    # {Compilation} does not call this: Atlas's resolver covers Valkyrie-backed
+    # types only, and a Compilation is an ActiveRecord row there.
+    #
+    # @param key [String] the type's wire key.
+    # @return [void]
+    def self.wire_key(key = name.split("::").last.gsub(/(?<!\A)([A-Z])/, '_\1').downcase)
+      TYPES[key] = self
+      TYPES[name.split("::").last] = self
+    end
+
+    # The class registered for a type string, in either spelling.
+    #
+    # An unknown type raises rather than answering `nil`, so a caller holding a
+    # type this gem does not define hears about it here instead of at a
+    # `NoMethodError` a few frames later.
+    #
+    # @api private
+    # @param name [String, Symbol] a wire key or class name.
+    # @return [Class]
+    # @raise [ArgumentError] when no class is registered for that type.
+    def self.resolve_type(name)
+      TYPES.fetch(name.to_s) do
+        raise ArgumentError, "unknown Atlas resource type: #{name.inspect}"
+      end
+    end
+
     # Resolve any Atlas resource by ID without knowing its type up front.
     #
     # The Atlas server returns a single-key JSON object whose key names the
@@ -62,7 +101,7 @@ module AtlasRb
       # The class's own name, never `capitalize` over the wire key: `capitalize`
       # answers `"File_set"` for a `file_set`, which is not a constant in this
       # namespace, and callers resolve this string to a class.
-      AtlasRb::Mash.new("klass" => class_for(result.first[0]).name.split("::").last,
+      AtlasRb::Mash.new("klass" => resolve_type(result.first[0]).name.split("::").last,
                         "resource" => result.first[1])
     end
 

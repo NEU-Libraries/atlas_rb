@@ -5,9 +5,7 @@ module AtlasRb
   # as a verb on the `/resources/{id}` sub-resource that already serves its
   # `GET`, so a caller holding only a NOID never resolves the type first.
   #
-  # Loaded after the subclasses because the typed writes delegate here, and
-  # because {Resource::TYPE_MAP} in `resource_types.rb` has the same ordering
-  # requirement.
+  # Loaded after the subclasses because the typed writes delegate here.
   #
   # **The names are deliberately not `update` and `metadata`.** Neither typed
   # name says which document it writes, and `Resource.mods` / `.permissions`
