@@ -32,11 +32,12 @@ Every Atlas payload that names a type carries it as `"klass"`, so the method
 lives on the shared `Mash` and covers `find`, `find_many`, `ancestors` nodes
 and the Solr digests. `klass` itself is unchanged.
 
-### Added — `Resource.wire_key`
+### Added — `Resource.unresolvable!`
 
-Each resolvable class registers itself by calling `wire_key` in its body. The
-key is the snake-cased class name, which is the root key Atlas wraps the
-type's JSON in.
+Every `Resource` subclass now registers itself when it is defined, under its
+class name and its snake-cased wire key. A subclass that Atlas never names in
+a payload opts out by calling `unresolvable!` in its body. `Compilation` is
+the only one.
 
 ### Added — `mods_editable?`
 

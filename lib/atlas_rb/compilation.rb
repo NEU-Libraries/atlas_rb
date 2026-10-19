@@ -24,6 +24,9 @@ module AtlasRb
     # Atlas REST endpoint prefix for this resource.
     # @api private
     ROUTE = "/compilations/"
+    # Atlas's resolver covers Valkyrie-backed types only, and a Compilation is
+    # an ActiveRecord row there, so no Atlas payload names one as its klass.
+    unresolvable!
 
     # Fetch a single Compilation by ID.
     #

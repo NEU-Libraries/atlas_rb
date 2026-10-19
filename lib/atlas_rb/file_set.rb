@@ -13,7 +13,6 @@ module AtlasRb
     # Atlas REST endpoint prefix for this resource.
     # @api private
     ROUTE = "/file_sets/"
-    wire_key
 
     # Fetch a single FileSet by ID.
     #

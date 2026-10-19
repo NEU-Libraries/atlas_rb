@@ -2,8 +2,8 @@
 
 RSpec.describe AtlasRb::Resource do
   # The seven Valkyrie-backed types Atlas's resolver answers with. Stated here
-  # so a subclass that forgets `wire_key` fails this spec rather than the first
-  # caller who resolves its type.
+  # so a new subclass that should have called `unresolvable!` fails this spec
+  # rather than registering silently.
   let(:resolvable) do
     [AtlasRb::Work, AtlasRb::Collection, AtlasRb::Community, AtlasRb::FileSet,
      AtlasRb::Blob, AtlasRb::Delegate, AtlasRb::Person]
@@ -22,6 +22,13 @@ RSpec.describe AtlasRb::Resource do
       expect(described_class::TYPES.keys).to include(
         "work", "collection", "community", "file_set", "blob", "delegate", "person"
       )
+    end
+
+    it "leaves out a subclass defined after the gem has loaded" do
+      Class.new(described_class)
+      stub_const("AtlasRb::LateType", Class.new(described_class))
+
+      expect(described_class::TYPES.values).not_to include(AtlasRb::LateType)
     end
   end
 

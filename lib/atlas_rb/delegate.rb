@@ -19,7 +19,6 @@ module AtlasRb
     # Atlas REST endpoint prefix for this resource.
     # @api private
     ROUTE = "/delegates/"
-    wire_key
 
     # Fetch a single Delegate by NOID or `valkyrie_id`.
     #

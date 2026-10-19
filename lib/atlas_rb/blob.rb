@@ -13,7 +13,6 @@ module AtlasRb
     # Atlas REST endpoint prefix for this resource.
     # @api private
     ROUTE = "/files/"
-    wire_key
 
     # Fetch a single Blob's metadata record (not its bytes — see {.content}).
     #

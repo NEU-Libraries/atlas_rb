@@ -634,8 +634,10 @@ It works on every Atlas payload that carries a `"klass"`: `find`,
 serialized — a job argument, a log line — and use `resource_class` when
 you act on it. Do not `const_get` into the `AtlasRb` namespace.
 
-Each resolvable class registers itself with `wire_key`, which derives the
-key Atlas wraps its JSON in from the class name (`FileSet` → `"file_set"`).
+Every `Resource` subclass registers itself when it is defined, under its
+class name and the key Atlas wraps its JSON in (`FileSet` → `"file_set"`).
+`Compilation` opts out with `unresolvable!`, because the resolver never
+returns one.
 A row naming a type no class registers raises `ArgumentError` rather than
 returning `nil`, so a type this gem does not model fails where the cause
 is.

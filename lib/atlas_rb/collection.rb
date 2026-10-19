@@ -15,7 +15,6 @@ module AtlasRb
     # Atlas REST endpoint prefix for this resource.
     # @api private
     ROUTE = "/collections/"
-    wire_key
 
     # Atlas accepts a MODS write for this type. See {Resource.mods_editable?}.
     def self.mods_editable?

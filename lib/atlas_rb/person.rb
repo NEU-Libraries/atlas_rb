@@ -27,7 +27,6 @@ module AtlasRb
   # non-privileged caller gets a 403.
   class Person < Resource
     ROUTE = "/people/"
-    wire_key
 
     # Fetch a Person by NOID.
     #

@@ -18,27 +18,42 @@ module AtlasRb
   class Resource
     extend AtlasRb::FaradayHelper
 
-    # Every type the Atlas resolver can answer with, filled by {wire_key} as
+    # Every type the Atlas resolver can answer with, filled by {inherited} as
     # each subclass loads and frozen in `atlas_rb.rb` once they all have. Keyed
     # by both spellings Atlas produces: the wire key (`"file_set"`) and the
     # class name Solr indexes as `internal_resource` (`"FileSet"`).
     # @api private
     TYPES = {}
 
-    # Registers this class as a type the resolver can answer with.
+    # Registers every subclass as a type the resolver can answer with, unless
+    # it opts out with {unresolvable!}.
     #
-    # The key is the class name in snake case, which is the root key Atlas
-    # wraps the type's JSON in (`json.file_set do`). That holds for every type
-    # today; a type whose wire name ever differs would need a key argument.
+    # The wire key is the class name in snake case, which is the root key
+    # Atlas wraps the type's JSON in (`json.file_set do`). That holds for every
+    # type today; a type whose wire name ever differs would need a way to say
+    # so.
     #
-    # {Compilation} does not call this: Atlas's resolver covers Valkyrie-backed
-    # types only, and a Compilation is an ActiveRecord row there.
+    # An anonymous class, or one defined after the gem has loaded, is not
+    # registered: the set of Atlas types is the gem's, and `TYPES` is frozen
+    # by then.
+    #
+    # @api private
+    # @return [void]
+    def self.inherited(subclass)
+      super
+      return if subclass.name.nil? || TYPES.frozen?
+
+      class_name = subclass.name.split("::").last
+      TYPES[class_name.gsub(/(?<!\A)([A-Z])/, '_\1').downcase] = subclass
+      TYPES[class_name] = subclass
+    end
+
+    # Removes this class from the types the resolver can answer with. For a
+    # subclass that Atlas never names in a payload.
     #
     # @return [void]
-    def self.wire_key
-      class_name = name.split("::").last
-      TYPES[class_name.gsub(/(?<!\A)([A-Z])/, '_\1').downcase] = self
-      TYPES[class_name] = self
+    def self.unresolvable!
+      TYPES.delete_if { |_, klass| klass == self }
     end
 
     # The class registered for a type string, in either spelling.
@@ -102,7 +117,7 @@ module AtlasRb
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an
     #   auth/validation error envelope), carrying Atlas's status + body.
     # @raise [ArgumentError] when Atlas names a type this gem registers no class
-    #   for. See {Resource.wire_key}.
+    #   for. See {Resource.inherited}.
     #
     # @example Polymorphic lookup
     #   AtlasRb::Resource.find("abc123")
