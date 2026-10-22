@@ -420,6 +420,47 @@ module AtlasRb
     end
   end
 
+  # Raised when Atlas cannot reach one of its own dependencies: an HTTP `503`
+  # whose body carries `error: "backend_unavailable"` and a `dependency` key
+  # naming `"database"`, `"index"` or `"storage"`.
+  #
+  # A sibling of {ReadOnlyModeError}, and deliberately NOT a {ResourceError}.
+  # Hosts commonly treat a `ResourceError` as a refusal of the request (Cerberus's
+  # `Authorizable` renders it as one), and an outage is no statement about the
+  # caller or the resource. Without this the outage reaches the host as the
+  # generic `ResourceError` a `5xx` read raises, indistinguishable from a bug.
+  #
+  #   rescue AtlasRb::BackendUnavailableError => e
+  #     render "outage", status: :service_unavailable
+  #     response.headers["Retry-After"] = e.retry_after.to_s if e.retry_after
+  #
+  # A bodyless `503` from a proxy is not this; it keeps reaching the caller as
+  # it did before. Poll {AtlasRb::Health.read} to see every dependency at once.
+  class BackendUnavailableError < Error
+    # @return [String, nil] the envelope's `error` discriminator
+    #   (`"backend_unavailable"`).
+    attr_reader :code
+
+    # @return [String, nil] which dependency failed: `"database"`, `"index"` or
+    #   `"storage"`.
+    attr_reader :dependency
+
+    # @return [Integer, nil] seconds to wait before retrying, from Atlas's
+    #   `Retry-After` response header.
+    attr_reader :retry_after
+
+    # @param message [String, nil] human-readable description.
+    # @param code [String, nil] the envelope's `error` discriminator.
+    # @param dependency [String, nil] the dependency that failed.
+    # @param retry_after [Integer, nil] seconds from the `Retry-After` header.
+    def initialize(message=nil, code: nil, dependency: nil, retry_after: nil)
+      @code = code
+      @dependency = dependency
+      @retry_after = retry_after
+      super(message || "Atlas cannot reach its #{dependency || "backend"}")
+    end
+  end
+
   # Raised when the transport has no way to authenticate a relay request:
   # neither `ATLAS_JWT` (BYO-JWT mode) nor a signing key
   # ({AtlasRb.config#assertion_signing_key}, relay-signing mode) is configured.

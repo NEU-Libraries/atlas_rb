@@ -408,11 +408,16 @@ module AtlasRb
     #   above: a maintenance window refuses writes on every path and a `503`
     #   reaches neither of them. On all three shapes, because a write that
     #   slips past it silently unwraps nil and reports success.
+    # - {Middleware::RaiseOnBackendUnavailable} — path-independent for the same
+    #   reason: a dependency outage can answer any request on any shape. It
+    #   must run before the read guard, or an outage on a read becomes the
+    #   generic {AtlasRb::ResourceError} a host treats as a refusal.
     def error_middleware(builder, reads:)
       builder.use AtlasRb::Middleware::RaiseOnReadError if reads
       builder.use AtlasRb::Middleware::RaiseOnStaleResource
       builder.use AtlasRb::Middleware::RaiseOnResourceError
       builder.use AtlasRb::Middleware::RaiseOnReadOnlyMode
+      builder.use AtlasRb::Middleware::RaiseOnBackendUnavailable
     end
 
     # Retry an idempotent read that failed in transport, in exactly one layer.
