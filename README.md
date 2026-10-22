@@ -871,9 +871,11 @@ latency["p95_ms"]         # => 98
 latency["slowest_actions"].first  # => { "action" => "works#mods", "calls" => 912, "p95_ms" => 188 }
 ```
 
-Atlas times each request from when Rails dispatches it until it returns, so
-the figures leave out the network and your own waiting. If you also time your
-Atlas calls, the difference is time spent on your side. The percentiles are
+Atlas times each request from when it enters Atlas's Rack stack until the app
+returns the response, the same span as the `x-runtime` header. The figures
+include time a request waited inside Atlas behind concurrent ones. They leave
+out time queued for a Puma thread, the network, and your own waiting. If you
+also time your Atlas calls, the difference is time spent on your side. The percentiles are
 interpolated from histogram buckets, so they are approximate.
 
 Like `Health.read`, it has a 5-second deadline and no retry. It raises

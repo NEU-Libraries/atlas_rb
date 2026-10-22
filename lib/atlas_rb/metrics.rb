@@ -15,11 +15,14 @@ module AtlasRb
 
     # How long Atlas took to serve its own requests (`GET /metrics/latency`).
     #
-    # Measured inside Atlas, from when Rails dispatches the action until it
-    # returns, so it leaves out the network and the caller's own waiting. A
-    # caller that also times its Atlas calls can subtract to see how much of
-    # its wait was its own. The percentiles are interpolated from histogram
-    # buckets, so they are approximate.
+    # Measured inside Atlas, from when a request enters its Rack stack until
+    # the app returns the response — the same span as the `x-runtime` header.
+    # So it includes time a request spent waiting inside Atlas behind
+    # concurrent ones, and leaves out time queued for a Puma thread, the
+    # network, and the caller's own waiting. A caller that also times its
+    # Atlas calls can subtract to see how much of its wait was its own. The
+    # percentiles are interpolated from histogram buckets, so they are
+    # approximate.
     #
     # No retry, and a fresh socket per call: like {AtlasRb::Health.read}, it is
     # polled rarely and should fail fast rather than hide a struggling Atlas.

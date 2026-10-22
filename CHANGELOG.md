@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.27.3
+
+### Changed — `Metrics.latency` documentation
+
+Atlas 0.6.227 times each request from the top of its Rack stack, the same span
+as `x-runtime`, rather than the controller action alone. The YARD and README
+now say so. No code changed; against an older Atlas the figures are still
+action-only.
+
 ## 1.27.2
 
 Requires an Atlas that serves `GET /metrics/latency`.
