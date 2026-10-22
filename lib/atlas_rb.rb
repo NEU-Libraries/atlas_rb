@@ -47,6 +47,7 @@ require_relative "atlas_rb/system/token"
 require_relative "atlas_rb/system/work"
 require_relative "atlas_rb/audit_event"
 require_relative "atlas_rb/maintenance"
+require_relative "atlas_rb/health"
 
 # Ruby client for the Atlas API — Northeastern University's institutional
 # digital repository.
