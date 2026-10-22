@@ -819,6 +819,44 @@ A `503` from a reverse proxy while Atlas restarts carries no JSON body and is
 a different condition with a different remedy, so it passes through as a plain
 response rather than raising.
 
+### Health and outages
+
+`AtlasRb::Health.read` returns Atlas's readiness report. It sends no
+credential, because Atlas serves `GET /health` unauthenticated:
+
+```ruby
+report = AtlasRb::Health.read
+report["status"]    # => "ok" / "degraded" / "unavailable"
+report["database"]  # => "ok" / "unavailable"
+report["index"]     # => "ok" / "unavailable"
+report["storage"]   # => "ok" / "unavailable"
+report["cache"]     # => "ok" / "unavailable" / "disabled"
+```
+
+Atlas answers `503` when the database, the index or the storage is down. That
+is an answer, so `read` returns it like a `200`. It raises
+`Faraday::ConnectionFailed` or `Faraday::TimeoutError` only when nothing
+answers, and `AtlasRb::ResourceError` when something answers that is not the
+report. It has a 5-second deadline (`read(timeout: 3)` to change it) and no
+retry, so a probe answers inside its poller's own deadline.
+
+When an ordinary call meets a dependency outage, Atlas answers `503` with
+`error: "backend_unavailable"`, and every binding raises:
+
+```ruby
+begin
+  AtlasRb::Work.find("w-789")
+rescue AtlasRb::BackendUnavailableError => e
+  e.dependency   # => "database" / "index" / "storage"
+  e.retry_after  # => 30
+end
+```
+
+It is not a `ResourceError`, which hosts treat as a refusal of the request.
+
+A streaming download (`Blob.content`, `Blob.version_content`) cannot raise
+this: its body has already gone to your block. Check the returned `status`.
+
 ## End-to-end example
 
 JSON responses come back as `AtlasRb::Mash` (a `Hashie::Mash` subclass), so

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.27.1
+
+Requires an Atlas that serves `GET /health` and the `backend_unavailable`
+envelope.
+
+### Added — `AtlasRb::Health.read`
+
+Reads Atlas's readiness report (`GET /health`). Returns the parsed body on a
+`200` or a `503`, because a `503` there is an answer. Raises only on
+transport failure, or `ResourceError` when the answer is not the report. No
+credential, a 5-second deadline, no retry, and a fresh socket per call.
+
+### Added — `AtlasRb::BackendUnavailableError`
+
+Raised on every binding when Atlas answers `503` with
+`error: "backend_unavailable"`. Carries `dependency` (`"database"`,
+`"index"` or `"storage"`) and `retry_after`. A sibling of
+`ReadOnlyModeError`, not a `ResourceError`. A bodyless `503` from a proxy
+still passes through.
+
 ## 1.27.0
 
 ### Removed — `Resource.class_for` and `Resource::TYPE_MAP`
