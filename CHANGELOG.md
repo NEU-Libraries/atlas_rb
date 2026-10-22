@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.27.2
+
+Requires an Atlas that serves `GET /metrics/latency`.
+
+### Added — `AtlasRb::Metrics.latency`
+
+Reads Atlas's own request latency for a window of up to 120 minutes: calls,
+5xx count, mean and approximate p50/p95/p99, and the slowest actions. Sent
+with the acting NUID's signed assertion, which must name an admin. A
+5-second deadline, no retry and a fresh socket per call. Raises
+`BackendUnavailableError` when Atlas's Redis is down and `ResourceError` on
+any other non-200.
+
 ## 1.27.1
 
 Requires an Atlas that serves `GET /health` and the `backend_unavailable`

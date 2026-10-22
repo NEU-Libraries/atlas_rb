@@ -857,6 +857,30 @@ It is not a `ResourceError`, which hosts treat as a refusal of the request.
 A streaming download (`Blob.content`, `Blob.version_content`) cannot raise
 this: its body has already gone to your block. Check the returned `status`.
 
+### Atlas's own latency
+
+`AtlasRb::Metrics.latency` reports how long Atlas took to serve its own
+requests over a recent window. Atlas gates it to admins and `:system`, so
+`nuid` must name an admin:
+
+```ruby
+latency = AtlasRb::Metrics.latency(minutes: 60, nuid: current_user.nuid)
+latency["calls"]          # => 18402
+latency["server_errors"]  # => 3
+latency["p95_ms"]         # => 98
+latency["slowest_actions"].first  # => { "action" => "works#mods", "calls" => 912, "p95_ms" => 188 }
+```
+
+Atlas times each request from when Rails dispatches it until it returns, so
+the figures leave out the network and your own waiting. If you also time your
+Atlas calls, the difference is time spent on your side. The percentiles are
+interpolated from histogram buckets, so they are approximate.
+
+Like `Health.read`, it has a 5-second deadline and no retry. It raises
+`BackendUnavailableError` (with `dependency == "cache"`) when Atlas's Redis is
+down, `ResourceError` on any other non-200 such as a `403`, and `Faraday`
+errors when nothing answers.
+
 ## End-to-end example
 
 JSON responses come back as `AtlasRb::Mash` (a `Hashie::Mash` subclass), so
