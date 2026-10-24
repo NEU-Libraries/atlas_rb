@@ -512,6 +512,48 @@ module AtlasRb
       end
     end
 
+    # Grade a Work's health green, yellow or red.
+    #
+    # Wraps `GET /works/<id>/health_check` (Atlas 0.6.232 or later). `grade` is
+    # `"green"` (viable), `"yellow"` (broken or degraded, nothing lost, so
+    # repairable in place) or `"red"` (bytes missing or corrupt, so it needs a
+    # restore or a re-deposit). Each of `findings` carries `severity`
+    # (`"advisory"`, `"repairable"` or `"fatal"`), a machine-readable `code`,
+    # the `subject` NOID it is about and a `message`. The codes are an open
+    # vocabulary: show one you do not recognise rather than failing on it.
+    #
+    # Atlas never re-hashes the bytes for this call, so `fixity_checked` is
+    # always `false`: a green means nothing is missing, not that the bytes
+    # were verified. Atlas allows it for the admin and devolved-admin tiers
+    # only; edit rights on the Work do not reach it.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [AtlasRb::Mash, nil] the report: `noid`, `grade`,
+    #   `fixity_checked` and `findings`.
+    #
+    #   `nil` when Atlas answers `404` — no such Work, or, with a misconfigured
+    #   `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (a `403` for a caller below the delegate tier, a `5xx`, a proxy's
+    #   `503`), carrying Atlas's status and body so the failure is attributable
+    #   at the boundary.
+    # @example Show what needs repair
+    #   report = AtlasRb::Work.health_check("w-789", nuid: admin_nuid)
+    #   report.findings.reject { |f| f.severity == "advisory" }.each do |f|
+    #     puts "#{f.severity} #{f.code}: #{f.message}"
+    #   end
+    def self.health_check(id, nuid: nil, on_behalf_of: nil)
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/health_check")) do |body|
+        AtlasRb::Mash.new(body)
+      end
+    end
+
     # List a Work's page FileSets in order, each with its assets.
     #
     # Wraps `GET /works/<id>/file_sets` — the ordered, grouped sibling of

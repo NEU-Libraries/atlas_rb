@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.27.4
+
+Requires an Atlas that serves `GET /works/:id/health_check` (0.6.232 or later).
+
+### Added — `AtlasRb::Work.health_check`
+
+Reads a Work's green/yellow/red health grade and the findings behind it, each
+with a severity, a machine-readable code, the NOID it is about and a message.
+Atlas never re-hashes the bytes for this call, so `fixity_checked` is always
+false. Admin and devolved-admin tiers only; anyone else gets a
+`ResourceError` with status 403. `nil` on a 404.
+
 ## 1.27.3
 
 ### Changed — `Metrics.latency` documentation
