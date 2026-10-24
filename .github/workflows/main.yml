@@ -13,16 +13,19 @@ jobs:
     name: Ruby ${{ matrix.ruby }}
     strategy:
       matrix:
+        # The Ruby Atlas and Cerberus run. Ruby 3.0 is not built for the current
+        # ubuntu-latest image, so setup-ruby 404s on it.
         ruby:
-          - '3.0.5'
+          - '3.4'
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
+    # No bundler-cache: gem build and gem push need no bundle, and the
+    # lockfile's Bundler 2.2.33 predates Ruby 3.4.
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
         ruby-version: ${{ matrix.ruby }}
-        bundler-cache: true
     - name: Build and push the gem
       run: |
         mkdir -p $HOME/.gem
