@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.28.0
+
+Requires an Atlas that stores the preview image's size and placeholder (0.6.234
+or later). An older Atlas ignores the new keys.
+
+### Added — the preview's size and placeholder on `Resource.set_thumbnails`
+
+`preview_width:`, `preview_height:` and `preview_placeholder:` ride the PATCH
+body beside `preview:`. Each is optional, and a `nil` is not sent. Atlas writes
+them only with a `preview` URI and clears them when a `preview` arrives without
+them, so pass them on every preview write. A malformed value, or one sent
+without `preview`, raises `ResourceError` with status 422 and an `error` code.
+
+`Work.find`, `Collection.find` and `Community.find` return the three keys
+beside `"preview"`, each `nil` when Atlas holds none.
+
 ## 1.27.4
 
 Requires an Atlas that serves `GET /works/:id/health_check` (0.6.232 or later).

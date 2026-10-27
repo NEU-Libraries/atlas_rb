@@ -29,6 +29,9 @@ module AtlasRb
     #   {AtlasRb.config}.default_on_behalf_of when omitted.
     # @return [Hash, nil] the `"work"` object, already unwrapped from the JSON
     #   response, or `nil` when the Work does not exist (`404`).
+    #   The preview image rides beside it: `"preview"` is its URI, and
+    #   `"preview_width"`, `"preview_height"` and `"preview_placeholder"` (base64
+    #   of a ~16px-wide JPEG) describe it. Each is `nil` when Atlas holds none.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an
     #   auth/validation error envelope), carrying Atlas's status + body.
     #

@@ -136,19 +136,39 @@ module AtlasRb
     #
     # Only the URIs you pass are upserted; an omitted key is left untouched.
     #
+    # The preview's size and placeholder are written only with `preview`, and
+    # Atlas answers `422` for one sent without it. A `preview` sent without them
+    # clears the stored ones, so pass them on every preview write.
+    #
     # @param id [String] the resource's NOID.
     # @param thumbnail [String, nil] IIIF URI for the ~85² thumbnail.
     # @param thumbnail_2x [String, nil] IIIF URI for the ~170² 2x thumbnail.
     # @param preview [String, nil] IIIF URI for the ~500w preview image.
+    # @param preview_width [Integer, nil] pixel width of the image `preview`
+    #   serves. Send it with `preview_height`.
+    # @param preview_height [Integer, nil] pixel height of the image `preview`
+    #   serves. Send it with `preview_width`.
+    # @param preview_placeholder [String, nil] base64 of a ~16px-wide JPEG of
+    #   that image, at most 2048 characters. The bytes only, not a data URI.
     # @param nuid [String, nil] optional acting user's NUID.
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header.
     # @return [AtlasRb::Mash] the resource, unwrapped from its type key.
     # @raise [AtlasRb::NotFoundError] on `404` — the write did not happen.
     # @raise [AtlasRb::StaleResourceError] on an optimistic-lock conflict.
-    # @raise [AtlasRb::ResourceError] on any other non-2xx.
-    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil, nuid: nil, on_behalf_of: nil)
-      body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview }.compact
+    # @raise [AtlasRb::ResourceError] on any other non-2xx, including the `422`
+    #   whose `error` names a malformed size or placeholder.
+    #
+    # @example A preview with its size and placeholder
+    #   AtlasRb::Resource.set_thumbnails("w-789", preview: uri,
+    #                                    preview_width: 500, preview_height: 375,
+    #                                    preview_placeholder: Base64.strict_encode64(tiny_jpeg))
+    def self.set_thumbnails(id, thumbnail: nil, thumbnail_2x: nil, preview: nil,
+                            preview_width: nil, preview_height: nil, preview_placeholder: nil,
+                            nuid: nil, on_behalf_of: nil)
+      body = { thumbnail: thumbnail, thumbnail_2x: thumbnail_2x, preview: preview,
+               preview_width: preview_width, preview_height: preview_height,
+               preview_placeholder: preview_placeholder }.compact
       unwrap(write_resource(
                connection({}, nuid, on_behalf_of: on_behalf_of)
                  .patch('/resources/' + id + '/thumbnails', JSON.dump(body))

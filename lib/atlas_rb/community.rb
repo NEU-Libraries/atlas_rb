@@ -30,6 +30,9 @@ module AtlasRb
     #   omitted.
     # @return [Hash, nil] the `"community"` object from the JSON response,
     #   already unwrapped, or `nil` when the Community does not exist (`404`).
+    #   The preview image rides beside it: `"preview"` is its URI, and
+    #   `"preview_width"`, `"preview_height"` and `"preview_placeholder"` (base64
+    #   of a ~16px-wide JPEG) describe it. Each is `nil` when Atlas holds none.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an
     #   auth/validation error envelope), carrying Atlas's status + body.
     #
