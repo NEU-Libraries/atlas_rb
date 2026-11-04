@@ -515,6 +515,48 @@ module AtlasRb
       end
     end
 
+    # List the revision dates of a Work's replaced files.
+    #
+    # Wraps `GET /works/<id>/file_revisions` (Atlas 0.6.243 or later). Each
+    # entry names one Blob that has been replaced at least once, as
+    # `"blob_id"`, and lists its content revisions newest first under
+    # `"revisions"`. A revision carries only `"revision"`, the contiguous
+    # 1-based ordinal (1 is the first upload), and `"created"`, an ISO-8601
+    # timestamp.
+    #
+    # The Blobs are the ones {.assets} lists, so a file in a withdrawn FileSet
+    # stays out, and a Delegate never appears. Atlas allows the call to anyone
+    # who can read the Work, so it carries no attribution, digest, size or
+    # filename. The attributed history is {Blob.versions}, which is
+    # admin-gated.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [Array<AtlasRb::Mash>, nil] one entry per Blob with more than one
+    #   revision: `"blob_id"` and `"revisions"` (each `"revision"` and
+    #   `"created"`), newest first. `[]` when no file was ever replaced.
+    #
+    #   `nil` when Atlas answers `404` — no such Work, or, with a misconfigured
+    #   `ATLAS_URL`, the route is not Atlas's at all.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (a `403` for a caller who cannot read the Work, a `5xx`, a proxy's
+    #   `503`), carrying Atlas's status and body so the failure is attributable
+    #   at the boundary.
+    # @example Show when each file was replaced
+    #   AtlasRb::Work.file_revisions("w-789", nuid: viewer_nuid).each do |entry|
+    #     entry.revisions.each { |r| puts "#{entry.blob_id} v#{r.revision} #{r.created}" }
+    #   end
+    def self.file_revisions(id, nuid: nil, on_behalf_of: nil)
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/file_revisions")) do |body|
+        body.map { |entry| AtlasRb::Mash.new(entry) }
+      end
+    end
+
     # Grade a Work's health green, yellow or red.
     #
     # Wraps `GET /works/<id>/health_check` (Atlas 0.6.232 or later). `grade` is

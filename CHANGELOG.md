@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.28.1
+
+Requires an Atlas that serves `GET /works/:id/file_revisions` (0.6.243 or
+later).
+
+### Added — `AtlasRb::Work.file_revisions`
+
+Lists the revision dates of a Work's replaced files: one entry per Blob with
+more than one revision, as `blob_id` and `revisions`, newest first. Each
+revision carries only `revision` and `created`. Atlas allows it to anyone who
+can read the Work, so it carries no attribution; `Blob.versions` stays the
+admin-gated, attributed history. `[]` when no file was ever replaced, `nil` on
+a 404.
+
 ## 1.28.0
 
 Requires an Atlas that stores the preview image's size and placeholder (0.6.234
