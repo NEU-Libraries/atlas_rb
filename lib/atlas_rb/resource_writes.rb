@@ -214,7 +214,7 @@ module AtlasRb
     # devolved-admin tiers with `403`, even a user who can edit the Work.
     #
     # `reason:` records why the resource was removed (Atlas 0.6.213 or later).
-    # It must be one of the removal notes the library's withdrawal policy
+    # It must be one of the removal notes the library's removal policy
     # allows, word for word; Atlas answers `422` with `invalid_reason` for any
     # other value. The note carries no date: read `tombstoned_at` for that.
     # The resource returns it as `tombstone_reason`, and a restore clears it.
