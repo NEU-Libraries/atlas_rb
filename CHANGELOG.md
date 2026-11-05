@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.29.1
+
+Needs an Atlas that withholds the files beneath a tombstone (0.6.245 or later).
+Against an older Atlas nothing raises, because that Atlas still serves them.
+
+### Added — `AtlasRb::TombstonedError`
+
+Raised on Atlas's `410` with `error: "tombstoned"`: a file whose Blob, FileSet
+or Work is tombstoned, or a tombstoned Work's file list. A `ResourceError`
+subclass. `tombstoned_resource_id` and `tombstoned_resource_type` name the
+resource whose tombstone applies, and `work_retracted?` is true when that is
+the Work. `Work.assets`, `.file_sets` and `.file_revisions` raise it in place of
+mapping over the error envelope as if it were the list. A `410` carrying the
+resource's own body, as `find` gets, is still returned.
+
+### Changed — `Blob.content` and `Blob.version_content` yield only a 2xx body
+
+Faraday hands every chunk to `on_data` whatever the status, so an error
+envelope reached the block as file bytes. Now a chunk reaches the block only
+for a `2xx`. A tombstone refusal raises `TombstonedError` before any chunk; any
+other status is returned with no chunk yielded.
+
+`Blob.find` documents `tombstoned_in_effect`, `tombstoned_resource_id` and
+`tombstoned_resource_type`, and `Blob.ancestry` documents `file_set_tombstoned`
+and `work_tombstoned`.
+
 ## 1.29.0
 
 Requires an Atlas that serves `GET /works/:id/tombstoned_assets` (0.6.244 or

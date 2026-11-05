@@ -737,11 +737,32 @@ rescue AtlasRb::ResourceError => e
 end
 ```
 
-A `410 Gone` is returned rather than raised, the same way `find` returns a
-tombstone. And the two streaming reads (`Blob.content`,
-`Blob.version_content`) hand you `{ status:, headers: }` instead of raising,
-because their chunks reach you as they arrive — check the status before you
-treat those bytes as a file.
+A `410 Gone` that carries the resource's own body is returned rather than
+raised, the same way `find` returns a tombstone. The two streaming reads
+(`Blob.content`, `Blob.version_content`) hand you `{ status:, headers: }`
+instead of raising. Only a `2xx` body reaches your block, so an error envelope
+never becomes the file; check the status to answer the request.
+
+#### A tombstone withholds files
+
+Atlas withholds a file when the Blob, its FileSet or its Work is tombstoned,
+and a tombstoned Work's file lists. It answers `410` with `error:
+"tombstoned"`, and the gem raises `AtlasRb::TombstonedError`, a
+`ResourceError`. `Blob.content` raises it before your block sees a chunk, and
+`Work.assets`, `.file_sets` and `.file_revisions` raise it in place of a list.
+Admins and the devolved-admin tier are still served.
+
+```ruby
+begin
+  AtlasRb::Blob.content(blob_id) { |chunk| response.stream.write(chunk) }
+rescue AtlasRb::TombstonedError => e
+  e.tombstoned_resource_type  # => "FileSet" (one file removed) or "Work"
+  e.work_retracted?           # => true when the whole Work is tombstoned
+end
+```
+
+To refuse before streaming, read `Blob.find`: `tombstoned_in_effect` and
+`tombstoned_resource_type` say the same thing. Needs Atlas 0.6.245 or later.
 
 A **write** raises `AtlasRb::NotFoundError`. The caller asked for a change and
 did not get one, so `nil` would invite the silent failure the read guard was
@@ -854,8 +875,9 @@ end
 
 It is not a `ResourceError`, which hosts treat as a refusal of the request.
 
-A streaming download (`Blob.content`, `Blob.version_content`) cannot raise
-this: its body has already gone to your block. Check the returned `status`.
+A streaming download (`Blob.content`, `Blob.version_content`) does not raise
+this. It returns the `status` and yields no chunk of the error body, so check
+the status.
 
 ### Atlas's own latency
 
@@ -909,8 +931,8 @@ AtlasRb::Work.assets(work.id)
 
 # 4. Stream the binary back without buffering it in memory.
 File.open("out.pdf", "wb") do |f|
-  headers = AtlasRb::Blob.content(blob.id) { |chunk| f.write(chunk) }
-  puts headers["content-type"]
+  res = AtlasRb::Blob.content(blob.id) { |chunk| f.write(chunk) }
+  puts res[:headers]["content-type"]
 end
 
 # 5. Look up the acting user and their groups.

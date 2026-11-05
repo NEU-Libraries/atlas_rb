@@ -29,6 +29,12 @@ module AtlasRb
     #   held bytes — reconciliation compares this against the v1 manifest
     #   without re-downloading), and a download URL — or `nil` when the Blob
     #   does not exist (`404`).
+    #
+    #   `"tombstoned_in_effect"` is true when the Blob, its FileSet or its Work
+    #   is tombstoned, and `"tombstoned_resource_type"` says which (`"FileSet"`
+    #   for a removed file, `"Work"` for a retracted Work). Atlas answers such a
+    #   Blob `410` with this body, which is returned, so a host can refuse a
+    #   download before it calls {.content}. Atlas 0.6.245 or later.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an
     #   auth/validation error envelope), carrying Atlas's status + body.
     #
@@ -58,7 +64,9 @@ module AtlasRb
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
     # @return [AtlasRb::Mash, nil] `{ "file_set" => "<noid>", "work" => "<noid>" }`
-    #   (either value `nil` when unresolvable).
+    #   (either value `nil` when unresolvable), with `"file_set_tombstoned"` and
+    #   `"work_tombstoned"` beside them (Atlas 0.6.245 or later; each `nil` with
+    #   its noid).
     #
     #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
     #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
@@ -114,6 +122,12 @@ module AtlasRb
     # @yieldparam chunk [String] the next chunk of binary data.
     # @return [Hash] `{ status: Integer, headers: Faraday::Utils::Headers }` for
     #   `GET /files/<id>/content` (`headers` is case-insensitive, hash-like).
+    #   Only a `2xx` body reaches `chunk_handler`. For any other status no chunk
+    #   is yielded, so an error envelope can never become the downloaded file;
+    #   the status is returned for the caller to answer with.
+    # @raise [AtlasRb::TombstonedError] when Atlas withholds the bytes because
+    #   the Blob, its FileSet or its Work is tombstoned (Atlas 0.6.245 or
+    #   later). Raised before any chunk is yielded.
     #
     # @example Stream the whole body to disk
     #   File.open("/tmp/out.pdf", "wb") do |f|
@@ -126,11 +140,7 @@ module AtlasRb
     #   res[:status]                       # => 206
     #   res[:headers]["content-range"]     # => "bytes 0-1048575/52428800"
     def self.content(id, range: nil, nuid: nil, on_behalf_of: nil, &chunk_handler)
-      response = connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/content") do |req|
-        req.headers["Range"] = range if range
-        req.options.on_data = proc { |chunk, _bytes_received, _env| chunk_handler.call(chunk) }
-      end
-      { status: response.status, headers: response.headers }
+      stream("#{ROUTE}#{id}/content", range: range, nuid: nuid, on_behalf_of: on_behalf_of, &chunk_handler)
     end
 
     # Upload a new Blob attached to a Work.
@@ -395,28 +405,77 @@ module AtlasRb
     #   omitted.
     # @yieldparam chunk [String] the next chunk of binary data.
     # @return [Hash] `{ status:, headers: }` — the HTTP status and response
-    #   headers. The status is handed back rather than raised on, because
-    #   chunks reach the caller as they arrive: by the time the status could
-    #   be checked, an error body would already have been streamed. A caller
-    #   writing the chunks to an HTTP response (or a file) must consult it, or
-    #   an Atlas error page becomes the bytes of the downloaded file. Matches
-    #   {.content}'s contract.
+    #   headers. As with {.content}, only a `2xx` body reaches `chunk_handler`,
+    #   and any other status is returned with no chunk yielded.
+    # @raise [AtlasRb::TombstonedError] as {.content} does.
     #
     # @example Download a superseded version to disk
     #   File.open("/tmp/old.pdf", "wb") do |f|
     #     AtlasRb::Blob.version_content("b-321", "v1") { |chunk| f.write(chunk) }
     #   end
     def self.version_content(id, version_id, nuid: nil, on_behalf_of: nil, &chunk_handler)
-      headers = {}
-      response = connection({}, nuid, on_behalf_of: on_behalf_of)
-                 .get("#{ROUTE}#{id}/versions/#{version_id}/content") do |req|
-        req.options.on_data = proc do |chunk, _bytes_received, env|
-          headers = env.response_headers if headers.empty? && env
-          chunk_handler.call(chunk)
+      path = "#{ROUTE}#{id}/versions/#{version_id}/content"
+      stream(path, nuid: nuid, on_behalf_of: on_behalf_of, &chunk_handler)
+    end
+
+    # The most of an error body kept for the exception. Atlas's envelopes are a
+    # few hundred bytes; the cap only bounds a misbehaving proxy.
+    ERROR_BODY_LIMIT = 64 * 1024
+
+    # Faraday hands every chunk to `on_data` whatever the status, and a host
+    # streaming to a browser has sent its file headers before the first one
+    # arrives. So only a 2xx chunk reaches the caller. Any other body is kept
+    # back: a tombstone refusal raises from it, and every other status is
+    # returned with no chunk yielded.
+    #
+    # @api private
+    def self.stream(path, nuid:, on_behalf_of:, range: nil, &chunk_handler)
+      sink = StreamSink.new(chunk_handler)
+      response = connection({}, nuid, on_behalf_of: on_behalf_of).get(path) do |req|
+        req.headers["Range"] = range if range
+        # A Proc, not a Method: Faraday streams only when on_data is a Proc, and
+        # buffers the whole body otherwise.
+        req.options.on_data = sink.method(:receive).to_proc
+      end
+      raise_if_tombstoned(response, sink.error_body)
+      { status: response.status, headers: sink.headers || response.headers }
+    end
+    private_class_method :stream
+
+    # @api private
+    def self.raise_if_tombstoned(response, body)
+      return unless response.status == 410
+
+      envelope = AtlasRb::TombstonedError.envelope(body)
+      raise AtlasRb::TombstonedError.new(envelope, response: response, body: body) if envelope
+    end
+    private_class_method :raise_if_tombstoned
+
+    # Routes each streamed chunk by the status Faraday recorded before the first
+    # one: a 2xx chunk to the caller, any other into a bounded error body. An
+    # env with no status is passed on, because nothing says it is an error.
+    #
+    # @api private
+    class StreamSink
+      attr_reader :headers, :error_body
+
+      def initialize(chunk_handler)
+        @chunk_handler = chunk_handler
+        @headers = nil
+        @error_body = +""
+      end
+
+      def receive(chunk, _bytes_received, env)
+        @headers ||= env&.response_headers
+        status = env&.status
+        if status.nil? || (200..299).cover?(status)
+          @chunk_handler.call(chunk)
+        elsif @error_body.bytesize < ERROR_BODY_LIMIT
+          @error_body << chunk
         end
       end
-      { status: response.status, headers: headers }
     end
+    private_constant :StreamSink
 
     # Roll a Blob back to a prior version.
     #

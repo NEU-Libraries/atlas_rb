@@ -412,8 +412,11 @@ module AtlasRb
     #   reason: a dependency outage can answer any request on any shape. It
     #   must run before the read guard, or an outage on a read becomes the
     #   generic {AtlasRb::ResourceError} a host treats as a refusal.
+    # - {Middleware::RaiseOnTombstoned} — a withheld file or file list. It must
+    #   run before the read guard too, which passes every `410` through.
     def error_middleware(builder, reads:)
       builder.use AtlasRb::Middleware::RaiseOnReadError if reads
+      builder.use AtlasRb::Middleware::RaiseOnTombstoned
       builder.use AtlasRb::Middleware::RaiseOnStaleResource
       builder.use AtlasRb::Middleware::RaiseOnResourceError
       builder.use AtlasRb::Middleware::RaiseOnReadOnlyMode

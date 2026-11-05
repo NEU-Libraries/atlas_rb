@@ -135,7 +135,7 @@ RSpec.describe AtlasRb::Blob do
         conn = stub_connection
         options = Struct.new(:on_data).new
         req = double("req", options: options)
-        env = double("env", response_headers: { "content-type" => "application/pdf" })
+        env = double("env", status: 200, response_headers: { "content-type" => "application/pdf" })
         expect(conn).to receive(:get).with("/files/b-1/versions/v1/content") do |&blk|
           blk.call(req)
           options.on_data.call("chunk-bytes", 11, env)
@@ -149,6 +149,64 @@ RSpec.describe AtlasRb::Blob do
         # chunks onward can refuse to pass an error body off as file bytes.
         expect(result[:status]).to eq(200)
         expect(result[:headers]["content-type"]).to eq("application/pdf")
+      end
+    end
+  end
+
+  # A host streaming to a browser sends its file headers before the first chunk,
+  # so the status has to be consulted per chunk: by the time the call returns,
+  # an error envelope would already be the downloaded file.
+  describe ".content" do
+    let(:tombstoned) do
+      '{"error":"tombstoned","resource_id":"b-1","tombstoned_resource_id":"w-1",' \
+        '"tombstoned_resource_type":"Work","message":"work w-1 is tombstoned"}'
+    end
+
+    def stream_from(status, chunks)
+      conn = instance_double(Faraday::Connection)
+      allow(described_class).to receive(:connection).with({}, nil, on_behalf_of: nil).and_return(conn)
+      req = double("req", options: Struct.new(:on_data).new, headers: {})
+      env = double("env", status: status, response_headers: {})
+      allow(conn).to receive(:get).with("/files/b-1/content") do |&blk|
+        blk.call(req)
+        chunks.each { |chunk| req.options.on_data.call(chunk, chunk.bytesize, env) }
+        instance_double(Faraday::Response, status: status, headers: {}, body: "")
+      end
+      req
+    end
+
+    it "yields the chunks of a 2xx body and forwards the Range" do
+      req = stream_from(206, %w[WEB VTT])
+      chunks = []
+      result = described_class.content("b-1", range: "bytes=0-5") { |c| chunks << c }
+      expect(chunks).to eq(%w[WEB VTT])
+      expect(result[:status]).to eq(206)
+      expect(req.headers["Range"]).to eq("bytes=0-5")
+      # Faraday's stream_response? is `on_data.is_a?(Proc)`; anything else buffers.
+      expect(req.options.on_data).to be_a(Proc)
+    end
+
+    it "raises TombstonedError on a tombstone refusal, having yielded nothing" do
+      stream_from(410, [tombstoned[0, 40], tombstoned[40..]])
+      chunks = []
+      expect { described_class.content("b-1") { |c| chunks << c } }
+        .to raise_error(AtlasRb::TombstonedError) do |e|
+          expect(e.status).to eq(410)
+          expect(e.body).to eq(tombstoned)
+          expect(e.tombstoned_resource_id).to eq("w-1")
+          expect(e.work_retracted?).to be(true)
+          expect(e).to be_a(AtlasRb::ResourceError)
+        end
+      expect(chunks).to be_empty
+    end
+
+    it "yields nothing for any other error status and returns the status" do
+      [403, 416, 500].each do |status|
+        stream_from(status, ['{"error":"x"}'])
+        chunks = []
+        result = described_class.content("b-1") { |c| chunks << c }
+        expect(chunks).to be_empty
+        expect(result[:status]).to eq(status)
       end
     end
   end

@@ -378,6 +378,61 @@ module AtlasRb
   # a caller that only wants "the write failed" can rescue the parent.
   class NotFoundError < ResourceError; end
 
+  # Raised when Atlas withholds a file, or a Work's file list, because of a
+  # tombstone: an HTTP `410` whose body carries `error: "tombstoned"`.
+  #
+  # A tombstone does not cascade, so the resource that carries it can be an
+  # ancestor of the one requested. A Blob is withheld when its FileSet is
+  # tombstoned (one file removed) or when its Work is (the whole Work
+  # retracted). {#tombstoned_resource_type} tells the two apart, so a host can
+  # show "file not found" for the first and its "Removed" page for the second.
+  #
+  #   rescue AtlasRb::TombstonedError => e
+  #     e.work_retracted? ? render("errors/gone", status: :gone) : head(:not_found)
+  #
+  # Admins and the devolved-admin tier are still served, so they never see
+  # this. A `410` from a single-resource read such as {Work.find} is not this:
+  # that one carries the resource's own body, and the read returns it.
+  #
+  # A subclass of {ResourceError}, so a caller that only wants "the read
+  # failed" can rescue the parent. Needs Atlas 0.6.245 or later.
+  class TombstonedError < ResourceError
+    # The discriminator Atlas renders. An exact-match wire contract.
+    CODE = "tombstoned"
+
+    # @return [String, nil] NOID of the resource whose tombstone applies.
+    attr_reader :tombstoned_resource_id
+
+    # @return [String, nil] its type: `"Work"`, `"FileSet"` or `"Blob"`.
+    attr_reader :tombstoned_resource_type
+
+    # @param envelope [Hash] Atlas's parsed `410` body.
+    # @param response [Faraday::Response, nil] the originating response.
+    # @param body [String, nil] the raw body, when `response` cannot carry it
+    #   (a streamed read hands its body to `on_data`, not to the response).
+    def initialize(envelope, response: nil, body: nil)
+      super(envelope["message"] || "tombstoned", response: response)
+      @body = body if body
+      @tombstoned_resource_id = envelope["tombstoned_resource_id"]
+      @tombstoned_resource_type = envelope["tombstoned_resource_type"]
+    end
+
+    # @return [Boolean] true when the whole Work is tombstoned.
+    def work_retracted?
+      tombstoned_resource_type == "Work"
+    end
+
+    # @return [Hash, nil] the envelope when `body` is Atlas's tombstone
+    #   refusal, parsed; `nil` for any other body.
+    # @api private
+    def self.envelope(body)
+      parsed = body.is_a?(Hash) ? body : JSON.parse(body.to_s)
+      parsed if parsed.is_a?(Hash) && parsed["error"] == CODE
+    rescue JSON::ParserError
+      nil
+    end
+  end
+
   # Raised when Atlas refuses a write because the repository-wide maintenance
   # window is open: an HTTP `503` whose body carries
   # `error: "read_only_mode"`.
