@@ -17,7 +17,7 @@ module AtlasRb
       # @api private
       ROUTE = "/resources/"
 
-      # Hard-delete a resource — a purge, not a withdrawal.
+      # Hard-delete a resource — a purge, not a tombstone.
       #
       # Removes the resource's metadata, cascades into its members, and removes
       # the OCFL objects holding the preserved bytes: every retained revision,
@@ -25,7 +25,7 @@ module AtlasRb
       # records the NOIDs it removed.
       #
       # Unrecoverable — prefer {AtlasRb::Resource.tombstone} for the
-      # user-visible withdrawal path, which keeps everything and can be
+      # reversible, user-visible removal, which keeps everything and can be
       # reversed. Admin-only.
       #
       # @param id [String] the resource's NOID.
@@ -49,11 +49,11 @@ module AtlasRb
 
       # Restore a previously-tombstoned resource.
       #
-      # Reverses a withdrawal: search and show pages stop returning a withdrawn
+      # Reverses a tombstone: search and show pages stop returning a tombstoned
       # stub. No `confirm:` marker — restoring is itself reversible, by
       # tombstoning again.
       #
-      # Accepts a FileSet id too (Atlas 0.6.211 or later), which puts a withdrawn
+      # Accepts a FileSet id too (Atlas 0.6.211 or later), which puts a tombstoned
       # caption or other attached file back in {Work.assets}.
       #
       # The devolved-admin tier calls this as well, although the namespace reads

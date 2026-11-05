@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.29.0
+
+Requires an Atlas that serves `GET /works/:id/tombstoned_assets` (0.6.244 or
+later). Against an older Atlas the method answers `nil`, because that Atlas
+answers `404` on the new path.
+
+### Renamed — `Work.withdrawn_assets` is now `Work.tombstoned_assets`
+
+Follows Atlas's rename of `GET /works/:id/withdrawn_assets`. The signature, the
+return shape and the errors are unchanged, and no alias is kept. The YARD text
+says "tombstone" for the reversible removal throughout, for a whole resource,
+a single file and a Darwin Core record alike.
+
 ## 1.28.1
 
 Requires an Atlas that serves `GET /works/:id/file_revisions` (0.6.243 or

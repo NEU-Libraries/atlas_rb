@@ -83,7 +83,7 @@ module AtlasRb
              ))
     end
 
-    # Withdraw a Work's Darwin Core record.
+    # Tombstone a Work's Darwin Core record.
     #
     # Nothing is purged: Atlas keeps the document and its version history, and
     # the next {put_dwc} restores the record. Until then {Work.dwc} answers
@@ -93,7 +93,7 @@ module AtlasRb
     # @param nuid [String, nil] optional acting user's NUID.
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header.
-    # @return [true] when the record was withdrawn.
+    # @return [true] when the record was tombstoned.
     # @raise [AtlasRb::NotFoundError] on `404` — the Work holds no record, or
     #   the id is not a Work.
     # @raise [AtlasRb::ResourceError] on any other non-2xx.
@@ -200,7 +200,7 @@ module AtlasRb
     # Restore is the operator's counterpart and lives in
     # {AtlasRb::Admin::Resource}, where the namespace is the marker.
     #
-    # Tombstone (withdraw) a resource.
+    # Tombstone a resource: retract it from discovery, reversibly.
     #
     # Returns the **raw response** rather than raising, because Atlas refuses a
     # container that still holds live children with a `422` carrying
@@ -208,7 +208,7 @@ module AtlasRb
     # error. Reversible via {.restore}.
     #
     # Accepts a FileSet id as well as a Community, Collection or Work (Atlas
-    # 0.6.211 or later). That withdraws an attached file, such as a caption,
+    # 0.6.211 or later). That tombstones an attached file, such as a caption,
     # reversibly: its Blobs ride along and it drops out of {Work.assets} and
     # {Work.file_sets}. Atlas refuses a FileSet from anyone outside the admin and
     # devolved-admin tiers with `403`, even a user who can edit the Work.

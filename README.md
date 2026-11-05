@@ -284,7 +284,7 @@ radius and the kind of authentication they need:
 ```ruby
 # Regular daily use — picks up Current.nuid via the configured default:
 AtlasRb::Work.find("w-789")              # typed read
-AtlasRb::Resource.tombstone("w-789")     # withdrawal (reversible), any type
+AtlasRb::Resource.tombstone("w-789")     # tombstone (reversible), any type
 
 # Operator-only, with a friction marker:
 AtlasRb::Admin::Resource.destroy("w-789", confirm: :i_understand)
@@ -541,7 +541,7 @@ if work["metadata_formats"].include?("dwc")
 end
 
 AtlasRb::Resource.put_dwc("w-789", "/tmp/dwc.xml", origin: "xml_loader")
-AtlasRb::Resource.delete_dwc("w-789")   # withdraws; the next put_dwc restores
+AtlasRb::Resource.delete_dwc("w-789")   # tombstones; the next put_dwc restores
 
 history = AtlasRb::Resource.dwc_versions("w-789")
 AtlasRb::Resource.dwc_version("w-789", history["versions"].last["version_id"])

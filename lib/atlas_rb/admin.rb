@@ -5,7 +5,7 @@ module AtlasRb
   #
   # Houses methods whose blast radius warrants more friction than the
   # regular CRUD surface: `destroy` (hard delete — content and metadata
-  # are unrecoverable) and `restore` (un-tombstone — reverses a withdraw,
+  # are unrecoverable) and `restore` (un-tombstone — reverses a tombstone,
   # typically driven from a Rails console session or a future admin UI).
   #
   # ## Why a separate namespace

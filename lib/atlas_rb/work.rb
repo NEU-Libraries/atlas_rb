@@ -447,12 +447,12 @@ module AtlasRb
     #
     # A Blob entry also carries `language` and `track_label`, set by {Blob.create}
     # and {Blob.update} for a caption or other text track and `nil` otherwise
-    # (Atlas 0.6.211 or later). A FileSet withdrawn with {Resource.tombstone}
-    # drops out of this listing and {.file_sets}; {.withdrawn_assets} lists it.
+    # (Atlas 0.6.211 or later). A FileSet tombstoned with {Resource.tombstone}
+    # drops out of this listing and {.file_sets}; {.tombstoned_assets} lists it.
     #
     # Every entry carries `file_set`, the NOID of the FileSet it is listed
     # under (Atlas 0.6.212 or later). That is the id {Resource.tombstone} and
-    # {Admin::Resource.restore} take to withdraw or restore the file.
+    # {Admin::Resource.restore} take to tombstone or restore the file.
     #
     # @param id [String] the Work ID.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
@@ -477,10 +477,10 @@ module AtlasRb
       end
     end
 
-    # List the assets of a Work's withdrawn FileSets, so they can be restored.
+    # List the assets of a Work's tombstoned FileSets, so they can be restored.
     #
-    # Wraps `GET /works/<id>/withdrawn_assets` (Atlas 0.6.212 or later). A
-    # FileSet withdrawn with {Resource.tombstone} drops out of {.assets} and
+    # Wraps `GET /works/<id>/tombstoned_assets` (Atlas 0.6.244 or later). A
+    # FileSet tombstoned with {Resource.tombstone} drops out of {.assets} and
     # {.file_sets}; this is the listing that still names it. Each entry has the
     # {.assets} shape, including `file_set` (the id to pass to
     # {Admin::Resource.restore}), plus the FileSet's `tombstoned_at` and
@@ -496,8 +496,8 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [Array<AtlasRb::Mash>, nil] one entry per asset of a withdrawn
-    #   FileSet; `[]` when nothing is withdrawn.
+    # @return [Array<AtlasRb::Mash>, nil] one entry per asset of a tombstoned
+    #   FileSet; `[]` when nothing is tombstoned.
     #
     #   `nil` when Atlas answers `404` — nothing is there to read, or, with a
     #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
@@ -506,11 +506,11 @@ module AtlasRb
     #   `503`), carrying Atlas's status and body so the failure is attributable
     #   at the boundary.
     # @example Offer Restore for a removed caption
-    #   AtlasRb::Work.withdrawn_assets("w-789", nuid: admin_nuid).each do |a|
+    #   AtlasRb::Work.tombstoned_assets("w-789", nuid: admin_nuid).each do |a|
     #     AtlasRb::Admin::Resource.restore(a.file_set, nuid: admin_nuid)
     #   end
-    def self.withdrawn_assets(id, nuid: nil, on_behalf_of: nil)
-      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/withdrawn_assets')) do |body|
+    def self.tombstoned_assets(id, nuid: nil, on_behalf_of: nil)
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/tombstoned_assets')) do |body|
         body.map { |entry| AtlasRb::Mash.new(entry) }
       end
     end
@@ -524,7 +524,7 @@ module AtlasRb
     # 1-based ordinal (1 is the first upload), and `"created"`, an ISO-8601
     # timestamp.
     #
-    # The Blobs are the ones {.assets} lists, so a file in a withdrawn FileSet
+    # The Blobs are the ones {.assets} lists, so a file in a tombstoned FileSet
     # stays out, and a Delegate never appears. Atlas allows the call to anyone
     # who can read the Work, so it carries no attribution, digest, size or
     # filename. The attributed history is {Blob.versions}, which is
@@ -726,7 +726,7 @@ module AtlasRb
     #   the terms under `"dwc"`.
     #
     #   `nil` when Atlas answers `404` — the Work holds no record (or it was
-    #   withdrawn), or the id is not a Work.
+    #   tombstoned), or the id is not a Work.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`,
     #   such as the `403` for a Work the caller may not read.
     # @example
