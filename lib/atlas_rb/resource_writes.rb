@@ -200,7 +200,7 @@ module AtlasRb
     # Restore is the operator's counterpart and lives in
     # {AtlasRb::Admin::Resource}, where the namespace is the marker.
     #
-    # Tombstone a resource: retract it from discovery, reversibly.
+    # Tombstone a resource: suppress it from discovery, reversibly.
     #
     # Returns the **raw response** rather than raising, because Atlas refuses a
     # container that still holds live children with a `422` carrying

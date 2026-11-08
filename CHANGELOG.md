@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.29.2
+
+### Changed — `TombstonedError#work_retracted?` is now `work_suppressed?`
+
+"Suppressed" is the staff-facing name for a tombstone, the term library
+catalogues use for a reversible removal. The method is renamed with no alias,
+so a caller of `work_retracted?` must switch to `work_suppressed?`. The YARD
+text that called a tombstoned Work "retracted" says "suppressed" too.
+`Work.disassociate` keeps "retract": withdrawing a relationship claim is
+not a suppression.
+
 ## 1.29.1
 
 Needs an Atlas that withholds the files beneath a tombstone (0.6.245 or later).

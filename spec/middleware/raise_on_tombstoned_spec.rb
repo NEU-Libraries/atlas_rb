@@ -24,7 +24,7 @@ RSpec.describe AtlasRb::Middleware::RaiseOnTombstoned do
       expect(e.message).to eq("fileset fs-2 is tombstoned")
       expect(e.tombstoned_resource_id).to eq("fs-2")
       expect(e.tombstoned_resource_type).to eq("FileSet")
-      expect(e.work_retracted?).to be(false)
+      expect(e.work_suppressed?).to be(false)
       expect(e.status).to eq(410)
     end
   end

@@ -32,7 +32,7 @@ module AtlasRb
     #
     #   `"tombstoned_in_effect"` is true when the Blob, its FileSet or its Work
     #   is tombstoned, and `"tombstoned_resource_type"` says which (`"FileSet"`
-    #   for a removed file, `"Work"` for a retracted Work). Atlas answers such a
+    #   for a removed file, `"Work"` for a suppressed Work). Atlas answers such a
     #   Blob `410` with this body, which is returned, so a host can refuse a
     #   download before it calls {.content}. Atlas 0.6.245 or later.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410` (e.g. an

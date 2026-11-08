@@ -384,11 +384,11 @@ module AtlasRb
   # A tombstone does not cascade, so the resource that carries it can be an
   # ancestor of the one requested. A Blob is withheld when its FileSet is
   # tombstoned (one file removed) or when its Work is (the whole Work
-  # retracted). {#tombstoned_resource_type} tells the two apart, so a host can
+  # suppressed). {#tombstoned_resource_type} tells the two apart, so a host can
   # show "file not found" for the first and its "Removed" page for the second.
   #
   #   rescue AtlasRb::TombstonedError => e
-  #     e.work_retracted? ? render("errors/gone", status: :gone) : head(:not_found)
+  #     e.work_suppressed? ? render("errors/gone", status: :gone) : head(:not_found)
   #
   # Admins and the devolved-admin tier are still served, so they never see
   # this. A `410` from a single-resource read such as {Work.find} is not this:
@@ -418,7 +418,7 @@ module AtlasRb
     end
 
     # @return [Boolean] true when the whole Work is tombstoned.
-    def work_retracted?
+    def work_suppressed?
       tombstoned_resource_type == "Work"
     end
 

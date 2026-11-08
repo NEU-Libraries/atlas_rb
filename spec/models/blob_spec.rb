@@ -194,7 +194,7 @@ RSpec.describe AtlasRb::Blob do
           expect(e.status).to eq(410)
           expect(e.body).to eq(tombstoned)
           expect(e.tombstoned_resource_id).to eq("w-1")
-          expect(e.work_retracted?).to be(true)
+          expect(e.work_suppressed?).to be(true)
           expect(e).to be_a(AtlasRb::ResourceError)
         end
       expect(chunks).to be_empty

@@ -468,7 +468,7 @@ module AtlasRb
     #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
     # @raise [AtlasRb::TombstonedError] when the Work is tombstoned and the
     #   caller is below the admin and devolved-admin tiers (Atlas 0.6.245 or
-    #   later), so a retracted Work's files are never listed.
+    #   later), so a suppressed Work's files are never listed.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
     #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
     #   Atlas's status and body so the failure is attributable at the boundary.
@@ -548,7 +548,7 @@ module AtlasRb
     #   `ATLAS_URL`, the route is not Atlas's at all.
     # @raise [AtlasRb::TombstonedError] when the Work is tombstoned and the
     #   caller is below the admin and devolved-admin tiers (Atlas 0.6.245 or
-    #   later), so a retracted Work's files are never listed.
+    #   later), so a suppressed Work's files are never listed.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
     #   (a `403` for a caller who cannot read the Work, a `5xx`, a proxy's
     #   `503`), carrying Atlas's status and body so the failure is attributable
@@ -633,7 +633,7 @@ module AtlasRb
     #   misconfigured `ATLAS_URL`, the route is not Atlas's at all.
     # @raise [AtlasRb::TombstonedError] when the Work is tombstoned and the
     #   caller is below the admin and devolved-admin tiers (Atlas 0.6.245 or
-    #   later), so a retracted Work's files are never listed.
+    #   later), so a suppressed Work's files are never listed.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
     #   (an auth or validation envelope, a `5xx`, a proxy's `503`), carrying
     #   Atlas's status and body so the failure is attributable at the boundary.

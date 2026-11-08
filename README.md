@@ -757,7 +757,7 @@ begin
   AtlasRb::Blob.content(blob_id) { |chunk| response.stream.write(chunk) }
 rescue AtlasRb::TombstonedError => e
   e.tombstoned_resource_type  # => "FileSet" (one file removed) or "Work"
-  e.work_retracted?           # => true when the whole Work is tombstoned
+  e.work_suppressed?          # => true when the whole Work is tombstoned
 end
 ```
 
