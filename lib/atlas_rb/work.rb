@@ -133,14 +133,23 @@ module AtlasRb
     #   re-points it. There is no way to change it after the create. Needs
     #   Atlas 0.6.277 or later; an older Atlas ignores the param and mints a
     #   second handle on `complete`.
+    # @param legacy_pid [String, nil] optional v1 pid the Work migrated from,
+    #   such as `"neu:1234"`. Admin only. It lands on the Work's first save, so
+    #   send it here and not on a later `put_mods`. There is no way to change
+    #   it after the create. Needs Atlas 0.6.279 or later; an older Atlas
+    #   ignores it.
     # @return [Hash] the created Work payload (post-update if `xml_path` was
     #   supplied).
     # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
     #   resource, so the write did not happen.
     # @raise [AtlasRb::ForbiddenError] if Atlas answers `403`: the caller holds no
-    #   edit rights on the Collection, or sent `handle:` without being an admin
-    #   or delegated admin (`action` is then `"supply_handle"`). No Work is
+    #   edit rights on the Collection, sent `handle:` without being an admin or
+    #   delegated admin (`action` is then `"supply_handle"`), or sent
+    #   `legacy_pid:` without being an admin (`"supply_legacy_pid"`). No Work is
     #   created.
+    # @raise [AtlasRb::LegacyPidError] if Atlas refuses the `legacy_pid:` as
+    #   malformed (`422`) or held by another resource (`409`, with
+    #   {LegacyPidError#holder_id}).
     # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
     #   and body. With `handle:`, a `422` (`invalid_handle`) means the value is
     #   not `<prefix>/<suffix>`, and a `409` (`handle_taken`) means another
@@ -161,11 +170,15 @@ module AtlasRb
     #
     # @example Migrated Work that keeps its v1 handle
     #   AtlasRb::Work.create("col-456", handle: "2047/d20001234", nuid: admin_nuid)
+    #
+    # @example Migrated Work that records its v1 pid
+    #   AtlasRb::Work.create("col-456", legacy_pid: "neu:1234", nuid: admin_nuid)
     def self.create(id, xml_path = nil, idempotency_key: nil, nuid: nil,
-                    on_behalf_of: nil, depositor: nil, handle: nil)
+                    on_behalf_of: nil, depositor: nil, handle: nil, legacy_pid: nil)
       params = { collection_id: id }
-      params[:depositor] = depositor if depositor
-      params[:handle]    = handle    if handle
+      params[:depositor]  = depositor  if depositor
+      params[:handle]     = handle     if handle
+      params[:legacy_pid] = legacy_pid if legacy_pid
       result = AtlasRb::Mash.new(write_resource(
         connection(params, nuid,
                    on_behalf_of: on_behalf_of, idempotency_key: idempotency_key).post(ROUTE)

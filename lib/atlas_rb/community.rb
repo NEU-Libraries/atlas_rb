@@ -67,10 +67,18 @@ module AtlasRb
     #   while attributing it to the anonymous NUID, since nobody personally owns
     #   those containers and access to them is via Grouper groups. The depositor
     #   is immutable post-create; there is no setter on the update surface.
+    # @param legacy_pid [String, nil] optional v1 pid the Community migrated
+    #   from, such as `"neu:1"`. Admin only; anyone else gets
+    #   {ForbiddenError} with `action` `"supply_legacy_pid"`. It lands on the
+    #   first save, so send it here and not on a later `put_mods`. There is no
+    #   way to change it after the create. Needs Atlas 0.6.279 or later.
     # @return [Hash] the created Community payload (post-update if `xml_path`
     #   was supplied).
     # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
     #   resource, so the write did not happen.
+    # @raise [AtlasRb::LegacyPidError] if Atlas refuses the `legacy_pid:` as
+    #   malformed (`422`) or held by another resource (`409`, with
+    #   {LegacyPidError#holder_id}).
     # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
     #   and body.
     #
@@ -82,9 +90,13 @@ module AtlasRb
     #
     # @example An institutional container owned by nobody
     #   AtlasRb::Community.create("c-parent", depositor: "000000099")
-    def self.create(id = nil, xml_path = nil, nuid: nil, on_behalf_of: nil, depositor: nil)
+    #
+    # @example The migrated repository root, which stands in for v1's neu:1
+    #   AtlasRb::Community.create(nil, legacy_pid: "neu:1", nuid: admin_nuid)
+    def self.create(id = nil, xml_path = nil, nuid: nil, on_behalf_of: nil, depositor: nil, legacy_pid: nil)
       params = { parent_id: id }
-      params[:depositor] = depositor if depositor
+      params[:depositor]  = depositor  if depositor
+      params[:legacy_pid] = legacy_pid if legacy_pid
       result = AtlasRb::Mash.new(write_resource(
         connection(params, nuid, on_behalf_of: on_behalf_of).post(ROUTE)
       ))["community"]

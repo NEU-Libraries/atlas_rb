@@ -378,6 +378,50 @@ module AtlasRb
   # a caller that only wants "the write failed" can rescue the parent.
   class NotFoundError < ResourceError; end
 
+  # Raised when Atlas refuses a create's `legacy_pid:`: a value that is not a
+  # v1 pid (`422`, `invalid_legacy_pid`), or one another resource already
+  # holds (`409`, `legacy_pid_taken`).
+  #
+  # On a `409`, {#holder_id} is the holder's NOID. A migration that crashed
+  # between the create and its own bookkeeping reads it to recover, rather
+  # than parsing the message:
+  #
+  #   rescue AtlasRb::LegacyPidError => e
+  #     raise unless e.code == "legacy_pid_taken"
+  #     ledger.record(pid, e.holder_id)
+  #
+  # A subclass of {ResourceError}, so a caller that only wants "the create
+  # failed" can rescue the parent. Needs Atlas 0.6.279 or later.
+  class LegacyPidError < ResourceError
+    # The discriminators Atlas renders. An exact-match wire contract.
+    CODES = %w[invalid_legacy_pid legacy_pid_taken].freeze
+
+    # @return [String] the envelope's `error` code.
+    attr_reader :code
+
+    # @return [String, nil] NOID of the resource that holds the pid, on a `409`.
+    attr_reader :holder_id
+
+    # @param message [String] human-readable refusal description.
+    # @param envelope [Hash] Atlas's parsed refusal body.
+    # @param response [Faraday::Response, nil] the originating response.
+    def initialize(message, envelope, response: nil)
+      super(message, response: response)
+      @code = envelope["error"]
+      @holder_id = envelope["resource_id"]
+    end
+
+    # @return [Hash, nil] the envelope when `body` is a legacy-pid refusal,
+    #   parsed; `nil` for any other body.
+    # @api private
+    def self.envelope(body)
+      parsed = body.is_a?(Hash) ? body : JSON.parse(body.to_s)
+      parsed if parsed.is_a?(Hash) && CODES.include?(parsed["error"])
+    rescue JSON::ParserError
+      nil
+    end
+  end
+
   # Raised when Atlas withholds a file, or a Work's file list, because of a
   # tombstone: an HTTP `410` whose body carries `error: "tombstoned"`.
   #

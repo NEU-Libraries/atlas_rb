@@ -133,6 +133,40 @@ module AtlasRb
                         "resource" => result.first[1])
     end
 
+    # Find the Community, Collection or Work a v1 pid migrated to.
+    #
+    # Wraps `GET /resources/legacy/<pid>`. A tombstoned holder is still
+    # answered, flagged, so an old v1 URL can land on its tombstone page. Atlas
+    # answers a holder the caller may not read exactly as an unknown pid, so
+    # `nil` means "nothing this caller can see holds it". To resolve a pid for
+    # any visitor, use {AtlasRb::System.find_by_legacy_pid}.
+    #
+    # @param pid [String] a v1 pid, `neu:` prefix included.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @return [AtlasRb::Mash, nil] `id` (the NOID), `type` (`"Community"`,
+    #   `"Collection"` or `"Work"`) and `tombstoned`, or `nil` on a `404`.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx.
+    #
+    # @example
+    #   AtlasRb::Resource.find_by_legacy_pid("neu:1234")
+    #   # => { "id" => "abc123", "type" => "Work", "tombstoned" => false }
+    def self.find_by_legacy_pid(pid, nuid: nil)
+      result = fetch_resource(legacy_pid_path(pid), nuid: nuid)
+      result && AtlasRb::Mash.new(result["resource"])
+    end
+
+    # The lookup path for a pid. Everything outside the unreserved set is
+    # percent-encoded except the colon, because Atlas's route matches the
+    # literal `neu:` prefix.
+    #
+    # @api private
+    def self.legacy_pid_path(pid)
+      escaped = pid.to_s.gsub(/[^A-Za-z0-9\-._~:]/) { |char| char.bytes.map { |b| format("%%%02X", b) }.join }
+      "/resources/legacy/#{escaped}"
+    end
+
     # Resolve many resources by NOID in a single round-trip.
     #
     # Wraps Atlas's `POST /resources/find_many`, which returns one lightweight
@@ -606,7 +640,11 @@ module AtlasRb
       end
       return if resp.success? || resp.status == 410
 
-      raise AtlasRb::ResourceError.new("#{request_target(resp)} → #{resp.status}: #{resp.body}", response: resp)
+      message = "#{request_target(resp)} → #{resp.status}: #{resp.body}"
+      envelope = AtlasRb::LegacyPidError.envelope(resp.body)
+      raise AtlasRb::LegacyPidError.new(message, envelope, response: resp) if envelope
+
+      raise AtlasRb::ResourceError.new(message, response: resp)
     end
     private_class_method :guard_write
 

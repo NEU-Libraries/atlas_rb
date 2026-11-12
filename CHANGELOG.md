@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.29.5
+
+Needs an Atlas that records a v1 pid (0.6.279 or later). An older Atlas ignores
+the `legacy_pid:` param, and the lookup answers `nil`.
+
+### Added — `legacy_pid:` on `Community.create`, `Collection.create` and `Work.create`
+
+Records the v1 pid a migrated object came from, on its first save. Admin only:
+anyone else gets `ForbiddenError` with `action` `"supply_legacy_pid"`, and
+nothing is created. There is no way to change the pid after the create.
+
+### Added — `LegacyPidError`
+
+Raised when Atlas refuses the pid: `code` is `"invalid_legacy_pid"` (a `422`)
+or `"legacy_pid_taken"` (a `409`). On a `409`, `holder_id` is the NOID of the
+resource that holds the pid. A subclass of `ResourceError`.
+
+### Added — `Resource.find_by_legacy_pid` and `System.find_by_legacy_pid`
+
+Wrap `GET /resources/legacy/<pid>` and return `id`, `type` and `tombstoned`, or
+`nil` when nothing holds the pid. A tombstoned holder is still returned. The
+user-path method answers `nil` for a holder the caller may not read; the system
+method reads past that gate, so a host can redirect an old v1 URL for any
+visitor.
+
 ## 1.29.4
 
 Needs an Atlas that accepts a supplied handle (0.6.277 or later). An older

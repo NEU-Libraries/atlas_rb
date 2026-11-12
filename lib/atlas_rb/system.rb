@@ -76,5 +76,23 @@ module AtlasRb
       path = since ? "/embargoes/release?since=#{since.iso8601}" : "/embargoes/release"
       JSON.parse(system_connection.post(path).body)["released"]
     end
+
+    # Find the Community, Collection or Work a v1 pid migrated to, whoever the
+    # visitor is. The `:system` role reads past the per-resource gate, so a
+    # host redirecting an old v1 URL gets the holder even when the visitor
+    # could not read it; the destination page applies the visitor's own gate.
+    # {AtlasRb::Resource.find_by_legacy_pid} is the user-path lookup.
+    #
+    # @param pid [String] a v1 pid, `neu:` prefix included.
+    # @return [AtlasRb::Mash, nil] `id`, `type` and `tombstoned`, or `nil`
+    #   when no resource holds the pid.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx.
+    #
+    # @example Redirect an inbound /files/neu:xyz
+    #   holder = AtlasRb::System.find_by_legacy_pid("neu:xyz")
+    def self.find_by_legacy_pid(pid)
+      result = read_body(system_connection.get(AtlasRb::Resource.legacy_pid_path(pid)))
+      result && AtlasRb::Mash.new(result["resource"])
+    end
   end
 end
