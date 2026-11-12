@@ -126,12 +126,25 @@ module AtlasRb
     #   it should be attributed to. The acting user becomes the Work's
     #   `proxy_uploader`. The depositor is immutable post-create; there is no
     #   setter on the update surface.
+    # @param handle [String, nil] optional handle the Work already owns, such
+    #   as a migrated v1 record's `"2047/d20001234"`. A resolver URL is
+    #   accepted; Atlas strips the host. Admin and delegated admin only. Atlas
+    #   records it as supplied, and `complete` then mints nothing and never
+    #   re-points it. There is no way to change it after the create. Needs
+    #   Atlas 0.6.277 or later; an older Atlas ignores the param and mints a
+    #   second handle on `complete`.
     # @return [Hash] the created Work payload (post-update if `xml_path` was
     #   supplied).
     # @raise [AtlasRb::NotFoundError] if Atlas answers `404` — the id names no such
     #   resource, so the write did not happen.
+    # @raise [AtlasRb::ForbiddenError] if Atlas answers `403`: the caller holds no
+    #   edit rights on the Collection, or sent `handle:` without being an admin
+    #   or delegated admin (`action` is then `"supply_handle"`). No Work is
+    #   created.
     # @raise [AtlasRb::ResourceError] on any other non-2xx, carrying Atlas's status
-    #   and body.
+    #   and body. With `handle:`, a `422` (`invalid_handle`) means the value is
+    #   not `<prefix>/<suffix>`, and a `409` (`handle_taken`) means another
+    #   Work, live or tombstoned, holds it.
     #
     # @example Empty work, metadata to be added later
     #   AtlasRb::Work.create("col-456")
@@ -145,10 +158,14 @@ module AtlasRb
     #
     # @example Proxy deposit — librarian uploads on behalf of a researcher
     #   AtlasRb::Work.create("col-456", depositor: "000000123")
+    #
+    # @example Migrated Work that keeps its v1 handle
+    #   AtlasRb::Work.create("col-456", handle: "2047/d20001234", nuid: admin_nuid)
     def self.create(id, xml_path = nil, idempotency_key: nil, nuid: nil,
-                    on_behalf_of: nil, depositor: nil)
+                    on_behalf_of: nil, depositor: nil, handle: nil)
       params = { collection_id: id }
       params[:depositor] = depositor if depositor
+      params[:handle]    = handle    if handle
       result = AtlasRb::Mash.new(write_resource(
         connection(params, nuid,
                    on_behalf_of: on_behalf_of, idempotency_key: idempotency_key).post(ROUTE)

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.29.4
+
+Needs an Atlas that accepts a supplied handle (0.6.277 or later). An older
+Atlas ignores the param, and `complete` then mints a second handle.
+
+### Added — `handle:` on `Work.create`
+
+Creates a Work with a handle it already owns, such as a migrated v1 record's.
+Atlas records it as supplied, so `complete` mints nothing and never re-points
+it. Admin and delegated admin only: anyone else gets `ForbiddenError` with
+`action` `"supply_handle"`, and no Work is created. A malformed handle is a
+`422` and a handle another Work holds is a `409`, both as `ResourceError`.
+
 ## 1.29.3
 
 Needs an Atlas that serves the citation route (0.6.274 or later). Against an
