@@ -157,14 +157,12 @@ module AtlasRb
       result && AtlasRb::Mash.new(result["resource"])
     end
 
-    # The lookup path for a pid. Everything outside the unreserved set is
-    # percent-encoded except the colon, because Atlas's route matches the
-    # literal `neu:` prefix.
+    # The lookup path for a pid. The colon is put back after encoding,
+    # because Atlas's route matches the literal `neu:` prefix.
     #
     # @api private
     def self.legacy_pid_path(pid)
-      escaped = pid.to_s.gsub(/[^A-Za-z0-9\-._~:]/) { |char| char.bytes.map { |b| format("%%%02X", b) }.join }
-      "/resources/legacy/#{escaped}"
+      "/resources/legacy/#{URI.encode_uri_component(pid.to_s).gsub('%3A', ':')}"
     end
 
     # Resolve many resources by NOID in a single round-trip.

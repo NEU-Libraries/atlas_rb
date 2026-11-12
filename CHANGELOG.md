@@ -5,6 +5,11 @@
 Needs an Atlas that records a v1 pid (0.6.279 or later). An older Atlas ignores
 the `legacy_pid:` param, and the lookup answers `nil`.
 
+### Changed — needs Ruby 3.2 or later
+
+`required_ruby_version` rises from 2.6 to 3.2, the oldest Ruby a consumer runs
+(Cerberus). The gem's CI already builds on 3.4 only.
+
 ### Added — `legacy_pid:` on `Community.create`, `Collection.create` and `Work.create`
 
 Records the v1 pid a migrated object came from, on its first save. Admin only:
