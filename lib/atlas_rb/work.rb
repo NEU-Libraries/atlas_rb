@@ -687,6 +687,58 @@ module AtlasRb
       end
     end
 
+    # Fetch the Work's citation as a CSL-JSON item.
+    #
+    # Wraps `GET /works/<id>/citation` (Atlas 0.6.274 or later). The body is a
+    # single CSL-JSON (Citation Style Language) object with no envelope, so a
+    # citation formatter such as citeproc can take it as it is. Atlas builds it
+    # with the same rule as its citation index, so it states the same facts.
+    #
+    # Only `id` (the NOID), `type` (a CSL type, `"document"` by default) and
+    # `title` are always present. Atlas **leaves out** a key the record does not
+    # give, rather than sending `null`, so read the others with `&.` or `dig`:
+    #
+    # - `author`, `contributor`: arrays of `{ "literal" => String }`. Names are
+    #   not split into family and given parts.
+    # - `issued`: one of two shapes. `{ "date-parts" => [[y, m, d]] }` carries
+    #   one, two or three parts at the precision the record states;
+    #   `{ "literal" => String }` carries the record's own words for a date it
+    #   could not encode, with no parts to read.
+    # - `abstract`: a String.
+    # - `keyword`: a **String**, the topical subjects joined with `", "` as CSL
+    #   expects, not an Array. A subject can itself contain a comma, so
+    #   `split(", ")` is approximate; {.mods} gives the exact list.
+    # - `URL`: the handle, once one is minted.
+    #
+    # `date-parts` is not a valid method name, so read it with
+    # `issued["date-parts"]` or `dig`, never as a method on the Mash.
+    #
+    # @param id [String] the Work ID.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [AtlasRb::Mash, nil] the CSL-JSON item, or `nil` when Atlas
+    #   answers `404` (no such Work).
+    # @raise [AtlasRb::TombstonedError] when the Work is tombstoned and the
+    #   caller is below the admin and devolved-admin tiers.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`
+    #   (a `403` for a caller who cannot read the Work, an auth envelope, a
+    #   `5xx`, a proxy's `503`), carrying Atlas's status and body.
+    # @example
+    #   cite = AtlasRb::Work.citation("w-789")
+    #   cite.title
+    #   cite.author&.map(&:literal)
+    #   cite.issued&.dig("date-parts", 0, 0)   # the year, or nil
+    #   cite.keyword&.split(", ")
+    def self.citation(id, nuid: nil, on_behalf_of: nil)
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of).get("#{ROUTE}#{id}/citation")) do |body|
+        AtlasRb::Mash.new(body)
+      end
+    end
+
     # Fetch the Work's MODS representation in the requested format.
     #
     # @param id [String] the Work ID.

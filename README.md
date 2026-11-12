@@ -749,7 +749,8 @@ Atlas withholds a file when the Blob, its FileSet or its Work is tombstoned,
 and a tombstoned Work's file lists. It answers `410` with `error:
 "tombstoned"`, and the gem raises `AtlasRb::TombstonedError`, a
 `ResourceError`. `Blob.content` raises it before your block sees a chunk, and
-`Work.assets`, `.file_sets` and `.file_revisions` raise it in place of a list.
+`Work.assets`, `.file_sets` and `.file_revisions` raise it in place of a list,
+and `Work.citation` raises it in place of the citation.
 Admins and the devolved-admin tier are still served.
 
 ```ruby

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.29.3
+
+Needs an Atlas that serves the citation route (0.6.274 or later). Against an
+older Atlas the route is not there, so the binding returns `nil`.
+
+### Added — `Work.citation`
+
+Wraps `GET /works/<id>/citation` and returns the Work's CSL-JSON item as a
+Mash, `nil` on a `404`. It raises `TombstonedError` for a tombstoned Work below
+the admin tiers, and `ResourceError` on any other failure. Atlas leaves out a
+key the record does not give, `keyword` is a comma-joined String, and `issued`
+has two shapes; the YARD text says how to read each.
+
 ## 1.29.2
 
 ### Changed — `TombstonedError#work_retracted?` is now `work_suppressed?`
