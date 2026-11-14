@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.29.7
+
+Needs Atlas 0.6.282 or later. An older Atlas still puts the rows under
+`works`, so `results` is `nil` there.
+
+### Changed — scoped search rows are under `results`
+
+`Compilation.search`, `Collection.search` and `Community.search` return their
+rows under `results`, not `works`. No code in the gem changed: it passes
+Atlas's body through as a `Mash`, so only the documented shape moves.
+
+`Collection.search` and `Community.search` also return the Collections
+beneath the scope, as v1's `/api/v1/search/:id` did. Each Collection row has
+the same shape as a Work row, and `resource_class` is `AtlasRb::Collection`.
+The scope itself is never a row, and any `filters:` drops every Collection.
+`Compilation.search` still returns Works only.
+
 ## 1.29.6
 
 Needs an Atlas with the scoped search routes. An older Atlas answers `404`,

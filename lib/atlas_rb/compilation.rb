@@ -475,7 +475,7 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [AtlasRb::Mash, nil] `{ "works" => [...], "pagination" => {...},
+    # @return [AtlasRb::Mash, nil] `{ "results" => [...], "pagination" => {...},
     #   "facets" => { "genre_ssim" => [{ "value", "count" }] } }`. The counts
     #   cover the whole result, not just the page. `nil` when Atlas answers `404`.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`.
@@ -483,7 +483,7 @@ module AtlasRb
     #   unknown sort; the error's message carries Atlas's explanation.
     # @example
     #   page = AtlasRb::Compilation.search("c-123", q: "harbor", facets: ["genre_ssim"])
-    #   page.works.map(&:noid)
+    #   page.results.map(&:noid)
     #   page.facets.genre_ssim.map { |row| [row.value, row.count] }
     def self.search(id, q: nil, filters: {}, facets: [], facet_limit: nil, sort: nil,
                     page: nil, per_page: nil, nuid: nil, on_behalf_of: nil)

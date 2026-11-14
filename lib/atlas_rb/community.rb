@@ -170,11 +170,15 @@ module AtlasRb
                ))
     end
 
-    # Search the Works beneath a Community, at any depth, with filters and facet
-    # counts.
+    # Search the Works and Collections beneath a Community, at any depth, with
+    # filters and facet counts.
     #
-    # Wraps `GET /communities/<id>/search`. The rows are the same Work digests
-    # {Resource.descendant_works} returns, gated to what the caller may read.
+    # Wraps `GET /communities/<id>/search`. The rows are the Work digests
+    # {Resource.descendant_works} returns, plus one row in the same shape for
+    # each Collection beneath the Community, gated to what the caller may read.
+    # Each row's `resource_class` tells the two apart. The Community itself is
+    # never a row. Any `filters:` drops every Collection, because a Collection
+    # carries none of the Work values the filters match.
     #
     # **Embargoed, in-progress and incomplete Works never appear, for any
     # caller.** That includes an admin token: the route is a public feed. Use
@@ -202,7 +206,7 @@ module AtlasRb
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [AtlasRb::Mash, nil] `{ "works" => [...], "pagination" => {...},
+    # @return [AtlasRb::Mash, nil] `{ "results" => [...], "pagination" => {...},
     #   "facets" => { "genre_ssim" => [{ "value", "count" }] } }`. The counts
     #   cover the whole result, not just the page. `nil` when Atlas answers `404`.
     # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`.
@@ -210,7 +214,7 @@ module AtlasRb
     #   unknown sort; the error's message carries Atlas's explanation.
     # @example
     #   page = AtlasRb::Community.search("x-123", filters: { "genre_ssim" => ["Maps"] }, sort: "title")
-    #   page.works.map(&:noid)
+    #   page.results.map(&:noid)
     def self.search(id, q: nil, filters: {}, facets: [], facet_limit: nil, sort: nil,
                     page: nil, per_page: nil, include_linked: nil, nuid: nil, on_behalf_of: nil)
       params = scoped_search_params(q: q, filters: filters, facets: facets, facet_limit: facet_limit,
