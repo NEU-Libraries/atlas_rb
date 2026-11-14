@@ -668,5 +668,30 @@ module AtlasRb
       payload
     end
     private_class_method :xml_upload_payload
+
+    # The query parameters of a scoped search: {Compilation.search},
+    # {Collection.search} and {Community.search}.
+    #
+    # Ruby-friendly names in, Atlas's wire names out: `filters:` becomes `f`
+    # and `facets:` becomes `facet`. Faraday's nested encoder then sends
+    # `f[genre_ssim][]=Photographs` and `facet[]=genre_ssim`, which is the
+    # shape Atlas reads. A parameter the caller left `nil` or empty is not
+    # sent at all, so Atlas applies its own default.
+    #
+    # @param q [String, nil] the keyword.
+    # @param filters [Hash{String => String, Array<String>}, nil] field to values.
+    # @param facets [Array<String>, String, nil] the fields to count.
+    # @param options [Hash] `facet_limit`, `sort`, `page`, `per_page`, sent when
+    #   not `nil`.
+    # @return [Hash] the query parameters.
+    # @api private
+    def self.scoped_search_params(q:, filters:, facets:, **options)
+      params = options.compact
+      params[:q] = q unless q.nil?
+      params[:f] = filters.to_h { |field, values| [field.to_s, Array(values)] } unless filters.nil? || filters.empty?
+      params[:facet] = Array(facets) unless facets.nil? || Array(facets).empty?
+      params
+    end
+    private_class_method :scoped_search_params
   end
 end

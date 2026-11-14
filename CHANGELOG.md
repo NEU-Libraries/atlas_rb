@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.29.6
+
+Needs an Atlas with the scoped search routes. An older Atlas answers `404`,
+and each method returns `nil`.
+
+### Added — `Compilation.search`, `Collection.search` and `Community.search`
+
+Wrap `GET /compilations/<id>/search`, `GET /collections/<id>/search` and
+`GET /communities/<id>/search`: a keyword, filters and facet counts over the
+Works of one Set or one container's subtree. Each returns a `Mash` with
+`works`, `pagination` and `facets`, or `nil` on a `404`. `filters:` is sent
+as `f[field][]=value` and `facets:` as `facet[]=field`.
+
+Embargoed, in-progress and incomplete Works never appear, even for an admin
+token. A facet or filter field that Atlas does not allow, or an unknown
+`sort`, raises `ResourceError` with status `400` and Atlas's message.
+
+`Collection.search` and `Community.search` shadow the catalog-wide
+`Resource.search` on those two classes. Call `Resource.search` for the
+catalog.
+
 ## 1.29.5
 
 Needs an Atlas that records a v1 pid (0.6.279 or later). An older Atlas ignores

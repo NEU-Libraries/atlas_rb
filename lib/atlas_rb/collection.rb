@@ -195,5 +195,56 @@ module AtlasRb
                  ROUTE + id + '/mods' + (kind.to_s.empty? ? '' : ".#{kind}")
                ))
     end
+
+    # Search the Works beneath a Collection, at any depth, with filters and facet
+    # counts.
+    #
+    # Wraps `GET /collections/<id>/search`. The rows are the same Work digests
+    # {Resource.descendant_works} returns, gated to what the caller may read.
+    #
+    # **Embargoed, in-progress and incomplete Works never appear, for any
+    # caller.** That includes an admin token: the route is a public feed. Use
+    # {Resource.descendant_works} or {Compilation.contents} to see them.
+    #
+    # @param id [String] the Collection ID.
+    # @param q [String, nil] keyword query; `nil` lists the whole scope.
+    # @param filters [Hash{String => String, Array<String>}] field to values,
+    #   e.g. `{ "genre_ssim" => ["Photographs"] }`. Values in one field match
+    #   any; every field must match. Sent as `f[field][]=value`.
+    # @param facets [Array<String>] the fields to count values for. Sent as
+    #   `facet[]=field`.
+    # @param facet_limit [Integer, nil] values per facet (Atlas: default 20, at
+    #   most 100).
+    # @param sort [String, nil] `"relevance"`, `"title"` or `"date"` (newest
+    #   first). Atlas sorts by relevance when `q` is given, and by a stable
+    #   order otherwise.
+    # @param page [Integer, nil] 1-based page (default 1).
+    # @param per_page [Integer, nil] page size (default 25, at most 100).
+    # @param include_linked [Boolean, nil] also search Works linked into the
+    #   subtree from elsewhere when truthy; structural members only by default.
+    # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
+    #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
+    #   path it is ignored (identity lives in the token).
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
+    #   omitted.
+    # @return [AtlasRb::Mash, nil] `{ "works" => [...], "pagination" => {...},
+    #   "facets" => { "genre_ssim" => [{ "value", "count" }] } }`. The counts
+    #   cover the whole result, not just the page. `nil` when Atlas answers `404`.
+    # @raise [AtlasRb::ResourceError] on any non-2xx other than `404` / `410`.
+    #   A `400` means a facet or filter field Atlas does not allow, or an
+    #   unknown sort; the error's message carries Atlas's explanation.
+    # @example
+    #   page = AtlasRb::Collection.search("x-123", filters: { "genre_ssim" => ["Maps"] }, sort: "title")
+    #   page.works.map(&:noid)
+    def self.search(id, q: nil, filters: {}, facets: [], facet_limit: nil, sort: nil,
+                    page: nil, per_page: nil, include_linked: nil, nuid: nil, on_behalf_of: nil)
+      params = scoped_search_params(q: q, filters: filters, facets: facets, facet_limit: facet_limit,
+                                    sort: sort, page: page, per_page: per_page)
+      params[:include_linked] = include_linked unless include_linked.nil?
+      read_body(connection(params, nuid, on_behalf_of: on_behalf_of).get(ROUTE + id + '/search')) do |body|
+        AtlasRb::Mash.new(body)
+      end
+    end
   end
 end
