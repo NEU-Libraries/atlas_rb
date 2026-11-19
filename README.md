@@ -248,6 +248,27 @@ transport's.
 Each attempt emits its own `request.atlas_rb` notification, so a host counting
 round-trips sees a retry as the second round-trip it really is.
 
+### Request ids
+
+Set `request_id` to send the host's request id to Atlas as `X-Request-Id`:
+
+```ruby
+AtlasRb.configure do |config|
+  config.request_id = -> { Current.request_id }
+end
+```
+
+Atlas adopts the id in place of minting its own and tags its log lines with
+it. Every Atlas request that one page view makes then carries the same id the
+host logged, so a single search finds them in both logs.
+
+The slot is resolved on each binding call, on the thread that makes it. A host
+that fans reads out on worker threads must copy its request context into each
+worker, or those reads send no id. A blank result sends no header, and Atlas
+mints an id as usual. The health and metrics probes do not send it.
+
+The id is a log label only. Atlas trusts nothing about it.
+
 ## Resource hierarchy
 
 ```

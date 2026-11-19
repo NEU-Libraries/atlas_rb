@@ -22,6 +22,9 @@ module AtlasRb
   #   header. Used by the acting-as / view-as feature on the consumer side.
   #   `nil` (the default) sends no header.
   #
+  # - {#request_id} — the host's request id, sent as `X-Request-Id:` on every
+  #   binding call so Atlas's log lines carry it.
+  #
   # ## Carve-outs
   #
   # System-path calls under {AtlasRb::System} route through
@@ -149,5 +152,19 @@ module AtlasRb
     #
     # @return [Integer, nil]
     attr_accessor :connection_max_requests
+
+    # The host's own request id, sent to Atlas as `X-Request-Id` on every
+    # binding call. Atlas adopts it in place of minting its own and tags its
+    # log lines with it, so one page view's Atlas requests can be found by the
+    # same id the host logged. Value or callable, resolved per call; typically
+    # `-> { Current.request_id }`. `nil` (the default), or a blank result,
+    # sends no header and Atlas mints an id as usual.
+    #
+    # The id is a log label, not a credential: Atlas trusts nothing about it.
+    # The health and metrics probes build their own connections and do not
+    # send it.
+    #
+    # @return [String, Proc, nil]
+    attr_accessor :request_id
   end
 end

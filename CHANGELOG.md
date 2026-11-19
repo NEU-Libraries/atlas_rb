@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.29.9
+
+### Added — `config.request_id`, sent as `X-Request-Id`
+
+A host can set `config.request_id = -> { Current.request_id }`. Every binding
+call then sends that id to Atlas as `X-Request-Id`. Atlas adopts it in place of
+minting its own and tags its log lines with it, so one page view's Atlas
+requests share the host's id. With the slot unset, nothing changes.
+
 ## 1.29.8
 
 ### Changed — installs on Ruby 4

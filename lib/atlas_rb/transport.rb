@@ -91,6 +91,11 @@ module AtlasRb
     # header, an `on_data` streaming handler), and those must keep working.
     # The block runs last so a call site can override anything set here.
     class Proxy
+      # Atlas adopts an incoming id as its own (Rails' ActionDispatch::RequestId)
+      # and tags its log lines with it, so one id names the host's request in
+      # both apps' logs.
+      REQUEST_ID_HEADER = "X-Request-Id"
+
       # Per-request headers and params, exposed so a caller (and the gem's own
       # transport specs) can read what a request will send without making one.
       attr_reader :headers, :params
@@ -106,7 +111,7 @@ module AtlasRb
       # @param params [Hash] per-request query/body params.
       def initialize(connection, headers, params = {})
         @connection = connection
-        @headers    = headers
+        @headers    = with_request_id(headers)
         @params     = params || {}
       end
 
@@ -140,6 +145,17 @@ module AtlasRb
       end
 
       private
+
+      # Resolved here because a proxy is built per binding call, on the thread
+      # making it — so a host that copies its request context into worker
+      # threads gets the right id on each of them. A caller's own header wins.
+      def with_request_id(headers)
+        id = AtlasRb.config.request_id
+        id = id.call if id.respond_to?(:call)
+        return headers if id.nil? || id.to_s.empty? || headers.key?(REQUEST_ID_HEADER)
+
+        headers.merge(REQUEST_ID_HEADER => id.to_s)
+      end
 
       def run(method, path, body, headers, params, &block)
         @connection.run_request(method, path, body, headers) do |req|

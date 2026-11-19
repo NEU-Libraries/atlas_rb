@@ -170,4 +170,52 @@ RSpec.describe AtlasRb::FaradayHelper do
       expect(payload["sub"]).to eq("001234567")
     end
   end
+  describe "request id forwarding (config.request_id)" do
+    before { ENV["ATLAS_JWT"] = "jwt-abc" }
+
+    after { AtlasRb.config.request_id = nil }
+
+    it "sends the resolved id as X-Request-Id" do
+      AtlasRb.config.request_id = -> { "req-123" }
+      expect(host.connection({}).headers["X-Request-Id"]).to eq("req-123")
+    end
+
+    it "accepts a plain value" do
+      AtlasRb.config.request_id = "req-456"
+      expect(host.connection({}).headers["X-Request-Id"]).to eq("req-456")
+    end
+
+    it "sends it on the multipart and system transports too" do
+      AtlasRb.config.request_id = -> { "req-789" }
+      credentials = double(atlas_system_token: "system-token")
+      stub_const("Rails", double(application: double(credentials: credentials)))
+      expect(host.multipart.headers["X-Request-Id"]).to eq("req-789")
+      expect(host.system_connection.headers["X-Request-Id"]).to eq("req-789")
+    end
+
+    it "sends no header when the slot is unset or resolves blank" do
+      expect(host.connection({}).headers).not_to have_key("X-Request-Id")
+      AtlasRb.config.request_id = -> { "" }
+      expect(host.connection({}).headers).not_to have_key("X-Request-Id")
+      AtlasRb.config.request_id = -> {}
+      expect(host.connection({}).headers).not_to have_key("X-Request-Id")
+    end
+
+    it "resolves per call, on the calling thread" do
+      AtlasRb.config.request_id = -> { Thread.current[:atlas_rb_spec_request_id] }
+      ids = %w[a b].map do |id|
+        Thread.new do
+          Thread.current[:atlas_rb_spec_request_id] = id
+          host.connection({}).headers["X-Request-Id"]
+        end
+      end.map(&:value)
+      expect(ids).to eq(%w[a b])
+    end
+
+    it "leaves a caller's own X-Request-Id alone" do
+      AtlasRb.config.request_id = -> { "ambient" }
+      proxy = AtlasRb::Transport::Proxy.new(nil, { "X-Request-Id" => "explicit" })
+      expect(proxy.headers["X-Request-Id"]).to eq("explicit")
+    end
+  end
 end
