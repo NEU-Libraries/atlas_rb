@@ -405,8 +405,8 @@ result["resource_id"]            # => "w-789"
 result["events"].first["action"] # => "update"
 ```
 
-Authorization errors (`401` / `403`) are not caught here — they surface as
-raw Faraday responses for the calling application's rescue layer.
+A `401` or `403` raises `AtlasRb::ResourceError`, carrying Atlas's status and
+body. A `404` returns `nil`.
 
 ### Session-scoped audit events
 
@@ -444,8 +444,8 @@ AtlasRb::AuditEvent.emit(
 `on_behalf_of_nuid`, `mode`, and `payload:` (free-form metadata) are
 omitted from the body when blank, so `emit` can also carry future,
 mode-less session events. Atlas stamps `occurred_at` server-side.
-Authorization errors (`401` / `403`) surface as raw Faraday responses,
-matching `Resource.history`.
+`emit` is a POST, so the read guard does not apply: a `401` or `403` is not
+raised, and Atlas's error envelope comes back parsed into a Mash.
 
 ### MODS version history
 
@@ -482,8 +482,9 @@ with `Work.mods` but XML is the only retained format.
 Version labels are **opaque, sortable OCFL `vN` strings**, not a 1-based
 counter — a Blob's preservation envelope occupies earlier versions, so the
 first MODS version is typically `v3`. Treat them as identifiers to feed back
-into `mods_version`. A resource with no MODS returns `{ "versions" => [] }`;
-`401` / `403` surface as raw Faraday responses, matching `Resource.history`.
+into `mods_version`. A resource with no MODS returns `{ "versions" => [] }`.
+A `401` or `403` raises `AtlasRb::ResourceError`, carrying Atlas's status and
+body. A `404` returns `nil`.
 
 ### Re-parenting
 

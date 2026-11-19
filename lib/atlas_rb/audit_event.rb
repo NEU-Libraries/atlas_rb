@@ -60,16 +60,15 @@ module AtlasRb
     #
     # Wraps `POST /audit_events`. The principals and metadata travel in the
     # JSON body — not in request headers — so the recorded event does not
-    # depend on the ambient {AtlasRb.config} identity. The request still
-    # authenticates as the configured caller (system token + the admin
-    # `User:` header); Atlas admin-gates the endpoint server-side.
+    # depend on the ambient {AtlasRb.config} identity. The request
+    # authenticates as the actor: atlas_rb signs an assertion for
+    # `actor_nuid`. Atlas lets admins and devolved admins create the event,
+    # and refuses `:system`.
     #
     # Atlas stamps `occurred_at` server-side, so it is not part of the body.
     #
-    # Authorization errors (`401` / `403`) are intentionally **not** caught
-    # here — they surface as raw Faraday responses for the calling
-    # application's rescue layer to translate, matching
-    # {AtlasRb::Resource.history}.
+    # `emit` is a POST, so the read guard does not apply: a `401` or `403` is
+    # not raised, and Atlas's error envelope comes back parsed into a Mash.
     #
     # @param action [String] the audit action, e.g. `"impersonation_started"`
     #   or `"impersonation_ended"`.

@@ -119,9 +119,10 @@ module AtlasRb
     #   header.
     # @return [AtlasRb::Mash] the resource, unwrapped from its type key.
     # @raise [AtlasRb::NotFoundError] on `404` — the write did not happen.
-    # @raise [AtlasRb::ResourceError] on any other non-2xx, including the `403`
-    #   Atlas answers when a caller tries to remove a grant for a group it does
-    #   not belong to.
+    # @raise [AtlasRb::ResourceError] on any other non-2xx. A caller who removes
+    #   a read or edit grant for a group it does not belong to gets no error:
+    #   Atlas keeps that grant and saves the rest, so check the returned
+    #   resource. Admins and devolved admins may remove any group.
     #
     # @example Publish, leaving every other key alone
     #   AtlasRb::Resource.set_permissions("xsj3xmz", { "read" => ["public"] })

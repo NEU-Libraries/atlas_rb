@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.29.10
+
+### Fixed — documentation that the code contradicts
+
+No code changed. The README and YARD now describe what the bindings do:
+
+- `Resource.history` and `Resource.mods_versions` raise
+  `AtlasRb::ResourceError` on a `401` or `403`. They do not return a raw
+  Faraday response.
+- `AuditEvent.emit` authenticates as the actor through a signed assertion,
+  not with the system token. A `401` or `403` comes back parsed, unraised.
+- `Resource.dwc_versions` returns `nil` for an id that is not a Work.
+- `Resource.set_permissions` gets no error when the caller removes a grant
+  for a group it is not in. Atlas keeps that grant and saves the rest.
+
 ## 1.29.9
 
 ### Added — `config.request_id`, sent as `X-Request-Id`

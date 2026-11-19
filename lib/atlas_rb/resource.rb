@@ -366,9 +366,8 @@ module AtlasRb
     # The whole envelope is preserved so callers can confirm the events
     # belong to the requested resource; access events as `result["events"]`.
     #
-    # Authorization errors (`401` / `403`) are intentionally **not** caught
-    # here — they surface as raw Faraday responses for the calling
-    # application's rescue layer to translate.
+    # A `401` or `403` raises {AtlasRb::ResourceError}, carrying Atlas's
+    # status and body. A `404` returns `nil`.
     #
     # @todo Add pagination support once Atlas's history endpoint exposes
     #   page / per_page query params. Today the endpoint returns the full
@@ -521,8 +520,9 @@ module AtlasRb
     # List the retained versions of a Work's Darwin Core record.
     #
     # The same envelope as {mods_versions}, under the same admin gate, with
-    # attribution drawn from the Darwin Core edits only. A Work with no record,
-    # or an id that is not a Work, comes back as `{ "versions" => [] }`.
+    # attribution drawn from the Darwin Core edits only. A Work with no record
+    # comes back as `{ "versions" => [] }`. An id that is not a Work returns
+    # `nil`, as Atlas answers `404`.
     #
     # @param id [String] the Work's NOID.
     # @param nuid [String, nil] optional acting user's NUID.
