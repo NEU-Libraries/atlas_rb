@@ -16,12 +16,11 @@ jobs:
         # The Ruby Atlas and Cerberus run. Ruby 3.0 is not built for the current
         # ubuntu-latest image, so setup-ruby 404s on it.
         ruby:
-          - '3.4'
+          - '4.0'
 
     steps:
     - uses: actions/checkout@v5
-    # No bundler-cache: gem build and gem push need no bundle, and the
-    # lockfile's Bundler 2.2.33 predates Ruby 3.4.
+    # No bundler-cache: gem build and gem push need no bundle.
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
