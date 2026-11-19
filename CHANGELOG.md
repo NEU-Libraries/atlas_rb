@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.29.8
+
+### Changed — installs on Ruby 4
+
+The `faraday-follow_redirects` dependency is now `~> 0.5`. Every release
+before 0.5.0 declared `required_ruby_version < 4`, so no app that depended
+on atlas_rb could bundle on Ruby 4. Release 0.5.0 drops that cap and
+changes no behaviour. The gem's own Ruby floor stays at 3.2.
+
 ## 1.29.7
 
 Needs Atlas 0.6.282 or later. An older Atlas still puts the rows under

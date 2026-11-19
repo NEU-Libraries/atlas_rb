@@ -3,7 +3,7 @@ PATH
   specs:
     atlas_rb (1.29.7)
       faraday (~> 2.7)
-      faraday-follow_redirects (~> 0.3.0)
+      faraday-follow_redirects (~> 0.5)
       faraday-multipart (~> 1)
       faraday-net_http_persistent (~> 2.3)
       faraday-retry (~> 2.4)
@@ -20,7 +20,7 @@ GEM
       faraday-net_http (>= 2.0, < 3.6)
       json
       logger
-    faraday-follow_redirects (0.3.0)
+    faraday-follow_redirects (0.5.0)
       faraday (>= 1, < 3)
     faraday-multipart (1.2.0)
       multipart-post (~> 2.0)
@@ -69,8 +69,8 @@ PLATFORMS
 DEPENDENCIES
   atlas_rb!
   rake (~> 13.0)
-  rspec (~> 3.0)
+  rspec (~> 3.12, ~> 3.0)
   yard (~> 0.9)
 
 BUNDLED WITH
-   2.2.33
+  4.0.20
