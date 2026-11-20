@@ -578,6 +578,25 @@ checks shape only, so validate against `tdwg_dwc_simple.xsd` before you call.
 The two version calls behave as `mods_versions` and `mods_version` do, under
 the same admin gate.
 
+### Previewing a draft
+
+`Resource.preview` renders a draft as HTML and saves nothing. The HTML is what
+the format's display endpoint gives for a stored record. `Resource.metadata_formats`
+lists the formats it takes, MODS first, so a format picker needs no
+hard-coded list:
+
+```ruby
+AtlasRb::Resource.metadata_formats.map { |f| [f["label"], f["id"]] }
+# => [["MODS", "mods"], ["Darwin Core", "dwc"]]
+
+AtlasRb::Resource.preview("/tmp/draft-mods.xml")                         # MODS
+AtlasRb::Resource.preview("/tmp/draft-dwc.xml", metadata_format: "dwc")  # Darwin Core
+```
+
+`preview` raises `ResourceError` on a refused draft. Its body's `error` names
+the rule: a Darwin Core shape rule, as `put_dwc` reports, or
+`unknown_metadata_format` for a token Atlas does not preview.
+
 The two mutations raise the same way `reparent` does — `LinkedMemberError`
 on a structural `422` (carrying the envelope's `error` code as `#code`) and
 `ForbiddenError` on a `403` — instead of swallowing the envelope.

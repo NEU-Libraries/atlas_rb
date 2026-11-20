@@ -303,27 +303,55 @@ module AtlasRb
                   .get("/resources/search")) { |body| AtlasRb::Mash.new(body) }
     end
 
-    # Validate a MODS XML document against Atlas's schema *without* persisting it.
+    # Render an unsaved metadata draft as HTML, without persisting anything.
     #
-    # Useful for surfacing validation errors in UIs before the user commits.
+    # The HTML is what the format's display endpoint gives for a stored record:
+    # a MODS draft renders as `/works/{id}/mods.html` does, a Darwin Core draft
+    # as `/works/{id}/dwc.html` does. {metadata_formats} lists the formats.
     #
-    # @param xml_path [String] path to a MODS XML file on disk.
+    # @param xml_path [String] path to the draft XML file on disk.
+    # @param metadata_format [String] the draft's format token, such as
+    #   `"mods"` or `"dwc"`. Defaults to `"mods"`.
     # @param nuid [String, nil] optional acting user's NUID. On the relay-signing
     #   path it is signed into the assertion `sub`; on the BYO-JWT (`ATLAS_JWT`)
     #   path it is ignored (identity lives in the token).
     # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
     #   header. Falls through to {AtlasRb.config}.default_on_behalf_of when
     #   omitted.
-    # @return [String] the raw response body from `POST /resources/preview`
-    #   — typically a JSON or XML error report.
+    # @return [String] the rendered HTML.
+    # @raise [AtlasRb::ResourceError] on a non-2xx. A draft Atlas refuses
+    #   answers `422`; the error's `body` is the JSON envelope, whose `"error"`
+    #   names the rule, such as `"record_count"` or `"unknown_metadata_format"`.
     #
     # @example
-    #   AtlasRb::Resource.preview("/tmp/draft-mods.xml")
-    def self.preview(xml_path, nuid: nil, on_behalf_of: nil)
+    #   AtlasRb::Resource.preview("/tmp/draft-dwc.xml", metadata_format: "dwc")
+    def self.preview(xml_path, metadata_format: "mods", nuid: nil, on_behalf_of: nil)
       payload = { binary: Faraday::Multipart::FilePart.new(File.open(xml_path),
                                                            "application/xml",
-                                                           File.basename(xml_path)) }
-      multipart(nuid, on_behalf_of: on_behalf_of).post('/resources/preview', payload)&.body
+                                                           File.basename(xml_path)),
+                  metadata_format: metadata_format }
+      read_raw(multipart(nuid, on_behalf_of: on_behalf_of).post('/resources/preview', payload))
+    end
+
+    # List the metadata formats {preview} renders, MODS first.
+    #
+    # Build a format picker from this rather than a hard-coded list. A Work's
+    # own `"metadata_formats"` lists the additional records it holds, by the
+    # same tokens; it leaves out MODS, which every Work holds.
+    #
+    # @param nuid [String, nil] optional acting user's NUID.
+    # @param on_behalf_of [String, nil] optional NUID for the `On-Behalf-Of`
+    #   header.
+    # @return [Array<AtlasRb::Mash>] one entry per format, with `"id"` (the token),
+    #   `"label"` and `"media_type"`.
+    # @raise [AtlasRb::ResourceError] on a non-2xx other than `404` / `410`.
+    #
+    # @example
+    #   AtlasRb::Resource.metadata_formats.map { |f| [f["label"], f["id"]] }
+    #   # => [["MODS", "mods"], ["Darwin Core", "dwc"]]
+    def self.metadata_formats(nuid: nil, on_behalf_of: nil)
+      read_body(connection({}, nuid, on_behalf_of: on_behalf_of)
+                  .get("/metadata_formats")) { |body| body.map { |entry| AtlasRb::Mash.new(entry) } }
     end
 
     # Fetch the access-control entries for a resource.

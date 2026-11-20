@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.29.11
+
+### Added — previews in any metadata format, and the format list
+
+- `Resource.preview` takes `metadata_format:`, such as `"dwc"`. It defaults
+  to `"mods"`, so existing calls render as before.
+- `Resource.metadata_formats` lists the formats `preview` renders, from
+  `GET /metadata_formats`, as `id`, `label` and `media_type`. The `id` is
+  the token `preview` takes.
+
+Needs Atlas 0.7.12 or later. An older Atlas ignores `metadata_format` and
+treats every draft as MODS, and answers `404` for the format list.
+
+### Changed — `Resource.preview` raises on an error status
+
+`preview` raises `AtlasRb::ResourceError` on a non-2xx. It used to return
+the error body as if it were the HTML, so a caller that marked the result
+HTML-safe would write Atlas's error JSON into its page. A refused draft
+answers `422`, and the error's `body` is the JSON envelope.
+
 ## 1.29.10
 
 ### Fixed — documentation that the code contradicts
